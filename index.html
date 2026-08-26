@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NN Comfort Playground — learning a home's comfort zone</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%232f3f4f%22/><text x=%2250%22 y=%2274%22 font-size=%2264%22 text-anchor=%22middle%22 fill=%22%23ffca7a%22>⌂</text></svg>">
+<link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">⌂</span>
+    <div>
+      <h1>NN Comfort Playground</h1>
+      <p>A network learns the comfort zone from votes, then runs the heating — in the browser, no libraries</p>
+    </div>
+  </div>
+  <div class="epochbox">
+    <span class="lbl">Epoch</span>
+    <span id="epoch" class="val">000,000</span><span id="epochTgt" class="tgt"></span>
+  </div>
+</header>
+
+<section class="toolbar">
+  <button id="btnPlay" class="play" title="Run / pause">▶</button>
+  <button id="btnStep" class="icon" title="One epoch">⏭</button>
+  <button id="btnReset" class="icon" title="Reset the weights">⟳</button>
+
+  <label class="ctl"><span>Run for</span>
+    <span class="epochsfield">
+      <input type="text" id="runEpochs" list="epochPresets" inputmode="numeric" placeholder="∞"
+             title="How many epochs one press of ▶ runs. Leave it empty to train until you pause.">
+      <em>epochs</em>
+    </span>
+    <datalist id="epochPresets">
+      <option value="50"></option><option value="100"></option><option value="200"></option>
+      <option value="500"></option><option value="1000"></option>
+    </datalist>
+  </label>
+
+  <label class="ctl"><span>Learning rate</span>
+    <select id="lr">
+      <option>0.0003</option><option>0.001</option><option selected>0.003</option>
+      <option>0.01</option><option>0.03</option><option>0.1</option>
+    </select>
+  </label>
+
+  <label class="ctl"><span>Activation</span>
+    <select id="act">
+      <option value="relu" selected>ReLU</option>
+      <option value="tanh">Tanh</option>
+      <option value="leaky">Leaky ReLU</option>
+      <option value="sigmoid">Sigmoid</option>
+    </select>
+  </label>
+
+  <label class="ctl"><span>L2 regularisation</span>
+    <select id="l2">
+      <option value="0" selected>0</option>
+      <option value="0.0001">0.0001</option>
+      <option value="0.001">0.001</option>
+      <option value="0.01">0.01</option>
+    </select>
+  </label>
+
+  <label class="ctl"><span>Batch size</span>
+    <select id="batch">
+      <option>4</option><option>8</option><option selected>16</option><option>32</option>
+    </select>
+  </label>
+</section>
+
+<main class="grid">
+
+  <!-- ============================= DATA ============================= -->
+  <aside class="panel">
+    <h2>Data</h2>
+    <p class="hint">Every example is one moment in a simulated home: eight sensor readings and an
+      occupant's vote — <span class="cchip cold"></span> too cold,
+      <span class="cchip comf"></span> comfortable, <span class="cchip warm"></span> too warm.
+      The votes come from a physical comfort model (PMV) the network never sees.</p>
+
+    <label class="ctl block"><span>Season coverage</span>
+      <select id="coverage">
+        <option value="year" selected>All year</option>
+        <option value="winter">Winter only (Nov–Feb)</option>
+        <option value="summer">Summer only (Jun–Aug)</option>
+        <option value="shoulder">Spring + autumn</option>
+      </select>
+    </label>
+
+    <label class="slider">
+      <span>Occupant preference <b id="prefVal">neutral</b></span>
+      <input type="range" id="pref" min="-0.8" max="0.8" step="0.05" value="0">
+    </label>
+
+    <label class="slider">
+      <span>Vote inconsistency <b id="sigmaVal">0.15</b></span>
+      <input type="range" id="sigma" min="0" max="0.5" step="0.01" value="0.15">
+    </label>
+
+    <label class="slider">
+      <span>Sensor noise <b id="snoiseVal">0.5</b></span>
+      <input type="range" id="snoise" min="0" max="2" step="0.1" value="0.5">
+    </label>
+
+    <label class="slider">
+      <span>Votes to collect <b id="nexVal">1200</b></span>
+      <input type="range" id="nex" min="240" max="2400" step="60" value="1200">
+    </label>
+
+    <label class="check"><input type="checkbox" id="balance" checked> balance the classes</label>
+
+    <h3>Inputs</h3>
+    <div id="featList" class="featlist"></div>
+
+    <button id="btnData" class="wide">Regenerate data</button>
+    <div id="countRow" class="countrow"></div>
+    <p class="hint small">The test set is 40% of the training size, from separately simulated days.</p>
+  </aside>
+
+  <!-- ========================== ARCHITECTURE ========================== -->
+  <section class="panel center">
+    <div class="centerhead">
+      <h2>Architecture</h2>
+      <div class="layerbtns">
+        <span id="layerLbl">Hidden layers</span>
+        <button id="layMinus">−</button>
+        <b id="layCount">2</b>
+        <button id="layPlus">+</button>
+        <span class="params" id="paramCount">— parameters</span>
+      </div>
+    </div>
+    <div id="netWrap" class="netwrap">
+      <div id="layerControls" class="layerctl"></div>
+      <canvas id="net"></canvas>
+    </div>
+    <p class="hint">Each box shows that unit's output over the two features chosen as the map axes —
+      all other sensors held at the probe values. <span class="sw pos"></span> positive,
+      <span class="sw neg"></span> negative; link thickness is weight magnitude. The small circle is
+      where the probe sits. <b>Click</b> a node for the full arithmetic below, click an input's name
+      in the Data panel to remove it and see what the network can no longer learn.</p>
+  </section>
+
+  <!-- ============================ RESULTS ============================ -->
+  <aside class="panel">
+    <h2>Results</h2>
+    <div class="metrics">
+      <div><span class="lbl">Training loss</span><span id="lossTrain" class="val">—</span></div>
+      <div><span class="lbl">Test loss</span><span id="lossTest" class="val red">—</span></div>
+      <div><span class="lbl">Test accuracy</span><span id="accTest" class="val big">—</span></div>
+      <div><span class="lbl">"Comfortable" F1</span><span id="f1Comf" class="val">—</span></div>
+    </div>
+    <canvas id="loss" class="chart"></canvas>
+    <div class="legend"><span class="dot blue"></span>training <span class="dot red"></span>test</div>
+
+    <h3>Confusion matrix (test, %)</h3>
+    <canvas id="conf" class="chart"></canvas>
+    <p class="hint small">Rows are what the occupants said, columns what the network predicted.
+      With noisy voters even a perfect network cannot reach 100% — the quick test in the map panel
+      scores against the noiseless model instead.</p>
+  </aside>
+</main>
+
+<!-- ============================ COMFORT MAP ============================ -->
+<section class="mappanel" id="mapPanel">
+  <div class="maphead">
+    <h2>Comfort map</h2>
+    <label class="ctl inline"><span>X axis</span><select id="mapX"></select></label>
+    <label class="ctl inline"><span>Y axis</span><select id="mapY"></select></label>
+    <label class="check"><input type="checkbox" id="showTruth" checked> true zone (dotted)</label>
+    <label class="check"><input type="checkbox" id="showVotes" checked> votes near this slice</label>
+    <label class="check"><input type="checkbox" id="allVotes"> all votes</label>
+  </div>
+  <div class="mapgrid">
+    <div>
+      <canvas id="map"></canvas>
+      <p class="hint">The colour is the network's vote across the plane, the dotted outline the true
+        comfort zone of the generating model. <b>Click the map</b> to move the probe. Everything not
+        on the axes is pinned at the probe sliders on the right — drag <i>Air movement</i> or
+        <i>Move</i> and watch the whole zone shift.</p>
+    </div>
+    <div class="probeside">
+      <h3>Probe — one moment in the room</h3>
+      <div id="probeSliders" class="probes"></div>
+      <div class="probe">
+        <button id="btnRandState">Random moment</button>
+        <button id="btnSimState">From live loop</button>
+      </div>
+      <div id="probeReadout" class="readout"></div>
+      <button id="btnQuick" class="wide small">Quick test · 300 fresh moments</button>
+      <div id="qtResult" class="qt"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ CONTROL LOOP ============================ -->
+<section class="looppanel" id="loopPanel">
+  <div class="loophead">
+    <h2>Live control loop</h2>
+    <button id="loopToggle" class="strplay">▶ Start loop</button>
+    <label class="ctl inline"><span>Speed</span>
+      <select id="loopSpeed">
+        <option value="5">×5 (5 min/s)</option>
+        <option value="30" selected>×30</option>
+        <option value="120">×120 (2 h/s)</option>
+        <option value="600">×600 (10 h/s)</option>
+      </select>
+    </label>
+    <label class="ctl inline"><span>Controller</span>
+      <select id="loopMode">
+        <option value="nn" selected>NN comfort zone</option>
+        <option value="thermo">Fixed thermostat</option>
+        <option value="manual">Manual power</option>
+      </select>
+    </label>
+    <label class="ctl inline" id="setpointWrap" style="display:none"><span>Setpoint <b id="setpointVal">21.0°</b></span>
+      <input type="range" id="setpoint" min="14" max="28" step="0.5" value="21">
+    </label>
+    <label class="ctl inline" id="manualWrap" style="display:none"><span>Power <b id="manualVal">35%</b></span>
+      <input type="range" id="manual" min="0" max="1" step="0.05" value="0.35">
+    </label>
+    <label class="ctl inline"><span>Heater</span>
+      <select id="heaterType">
+        <option value="fan">Fan heater (fast, all air)</option>
+        <option value="radiator" selected>Radiator</option>
+        <option value="stove">Masonry stove (slow, radiant)</option>
+      </select>
+    </label>
+    <label class="ctl inline"><span>Max power</span>
+      <select id="pmax">
+        <option value="1000">1 kW</option>
+        <option value="2000" selected>2 kW</option>
+        <option value="3000">3 kW</option>
+        <option value="4000">4 kW</option>
+      </select>
+    </label>
+    <label class="ctl inline"><span>Insulation <b id="insulVal">80</b> W/K</span>
+      <input type="range" id="insul" min="40" max="160" step="5" value="80">
+    </label>
+    <label class="ctl inline"><span>Start in</span>
+      <select id="startMonth">
+        <option value="15" selected>January</option><option value="46">February</option>
+        <option value="74">March</option><option value="105">April</option>
+        <option value="135">May</option><option value="166">June</option>
+        <option value="196">July</option><option value="227">August</option>
+        <option value="258">September</option><option value="288">October</option>
+        <option value="319">November</option><option value="349">December</option>
+      </select>
+    </label>
+    <span class="wmbreak"></span>
+    <div class="gen">
+      <span class="genlbl">Disturb the room:</span>
+      <button id="btnWindow">🪟 Open a window</button>
+      <button id="btnParty">🎉 Guests arrive</button>
+      <label><input type="checkbox" id="learnVotes"> keep learning from the votes</label>
+    </div>
+  </div>
+  <div id="loopStatus" class="strstatus">Loop stopped. Press ▶ to simulate the room with the network in charge.</div>
+  <canvas id="tchart" class="chart"></canvas>
+  <canvas id="lribbon" class="chart"></canvas>
+  <p class="hint">Above: room air (dark), walls (violet), outdoors (grey); the green band is the
+    temperature range the network currently calls comfortable, the dashed line its most comfortable
+    point T* — the setpoint the PI controller chases. Dots are occupant votes (white ring = the
+    network predicted that vote). Below: the network's live opinion as stacked probabilities, the
+    heater power as the dark line, and a strip that is green while the network's vote matches the
+    comfort model. The zone is nowhere in the code — it lives in the weights, and it moves with
+    the season, the draught and the people.</p>
+</section>
+
+<!-- ============================ ARITHMETIC ============================ -->
+<section class="mathpanel" id="mathPanel">
+  <div class="mathhead">
+    <h2 id="mathTitle">Arithmetic of the selected node</h2>
+    <div class="posctl">
+      <button id="btnClearSel">Clear selection</button>
+    </div>
+  </div>
+  <div id="mathBody" class="mathbody"><p class="empty">Click a node in the network diagram —
+    every number of its computation appears here, live.</p></div>
+</section>
+
+<footer class="notes">
+  <h3>Things to try</h3>
+  <ul>
+    <li><b>Train ~200 epochs, then start the loop.</b> Watch the green band appear and the room
+      settle into it. At night the band drops by several degrees on its own — nobody programmed a
+      night setback; the network learned that sleeping people (duvet, 0.75 met) like it cooler.</li>
+    <li><b>Winter-only training.</b> Set season coverage to winter, regenerate, retrain, then start
+      the loop in July. The zone is wrong — the network never saw people dressed for summer. That is
+      distribution shift, the standard failure of learned comfort models.</li>
+    <li><b>Remove inputs.</b> Untick <i>Time of day</i> and retrain: sleeping comfort and evening
+      comfort now fight each other, and the confusion matrix shows where the compromise lands.
+      Untick everything except room temperature and you get a plain learned thermostat.</li>
+    <li><b>Draughts move the zone.</b> Put <i>Air movement</i> on the Y axis: more moving air needs
+      warmer air — the dotted (true) boundary tilts, and a trained network tilts with it. In the
+      loop, open the window and watch T* jump up while the room cools.</li>
+    <li><b>Movement is metabolic rate.</b> X axis <i>T room</i>, Y axis <i>Move</i>: active people
+      want it cooler. During a party (🎉) the learned setpoint drops — more people, more activity,
+      more internal heat all point the same way.</li>
+    <li><b>Change the taste, keep learning.</b> Start the loop with <i>keep learning from the
+      votes</i> on, then drag <i>occupant preference</i> towards warmer. New votes disagree with the
+      old zone, and over the following simulated days the band slides up to follow the people.</li>
+    <li><b>Slow heaters need the walls.</b> Switch to the masonry stove: most heat arrives as
+      radiation into the walls, minutes late. The wall-temperature input is what lets the network
+      judge comfort correctly while the air is still catching up.</li>
+    <li><b>Voters are noisy.</b> Push vote inconsistency to 0.4: test accuracy falls, but the quick
+      test against the noiseless model barely moves — the network averages the noise away, which is
+      the whole point of learning from many votes.</li>
+  </ul>
+</footer>
+
+<script src="js/comfort.js?v=1"></script>
+<script src="js/sim.js?v=1"></script>
+<script src="js/data.js?v=1"></script>
+<script src="js/nn.js?v=1"></script>
+<script src="js/viz.js?v=1"></script>
+<script src="js/map.js?v=1"></script>
+<script src="js/loop.js?v=1"></script>
+<script src="js/main.js?v=1"></script>
+</body>
+</html>

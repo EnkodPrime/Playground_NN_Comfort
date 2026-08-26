@@ -1,0 +1,17 @@
+# Claude Code / локални настройки
+.claude/
+
+# ОС
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# редактори
+.vscode/
+.idea/
+*.swp
+
+# ако някой ден се появи инструментариум
+node_modules/
+dist/
+__pycache__/
