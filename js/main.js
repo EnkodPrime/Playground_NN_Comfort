@@ -8,6 +8,7 @@ const state = {
   l2: 0,
   batch: 16,
   coverage: 'year',
+  voteSource: 'sim',   // 'sim' — lived-in household; 'uniform' — theory sampling
   pref: 0,             // occupant preference: shifts the true PMV scale
   sigma: 0.15,         // vote inconsistency
   sensorNoise: 0.5,
@@ -74,8 +75,9 @@ function markProbeDirty() {
 function regenData() {
   const ids = activeIds();
   const opt = dataOpt();
-  train = makeDataset(state.nex, ids, opt);
-  test = makeDataset(Math.round(state.nex * 0.4), ids, opt);
+  const make = state.voteSource === 'uniform' ? makeUniformDataset : makeDataset;
+  train = make(state.nex, ids, opt);
+  test = make(Math.round(state.nex * 0.4), ids, opt);
   sliceVotesDirty = true; mapDrawDirty = true;
   renderCounts();
 }
@@ -753,6 +755,7 @@ function bindUI() {
   };
 
   // data panel
+  $('voteSource').onchange = (e) => { state.voteSource = e.target.value; regenData(); evaluate(); renderMetrics(); };
   $('coverage').onchange = (e) => { state.coverage = e.target.value; regenData(); evaluate(); renderMetrics(); };
   const pref = $('pref'), sigma = $('sigma'), snoise = $('snoise'), nex = $('nex');
   pref.oninput = () => {

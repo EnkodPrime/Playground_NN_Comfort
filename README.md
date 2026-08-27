@@ -79,6 +79,12 @@ dataset and runs the live control loop.
   slower and 30% radiant, a masonry stove very slow and mostly radiant. The slow heaters are why
   the wall-temperature input earns its place.
 
+**Two sources of votes.** The *Votes come from* switch chooses between a lived-in
+household — the simulation below, with its uneven, behaviour-shaped coverage — and *uniform
+sampling*: moments drawn evenly across the whole sensor space and labelled straight from the
+comfort theory, the way a lab study of ISO 7730 would. Comparing the two is the difference
+between learning from life and learning from the textbook.
+
 **Data collection is exploration, not comfort.** While collecting votes the heater deliberately
 wanders — random setpoints, slow power sweeps — so the room visits shivering, comfort and
 overheating across the whole year. The collector is curious about what it lacks: short of

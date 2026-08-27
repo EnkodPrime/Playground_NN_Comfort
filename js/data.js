@@ -133,8 +133,13 @@ function makeDataset(n, ids, opt) {
     }
   }
 
-  // optional class balancing: duplicate minority votes until the classes match
-  if (opt.balance) {
+  return finishDataset(xs, ys, states, pmvs, opt.balance);
+}
+
+/** Shared tail of every dataset: optional class balancing and a shuffle. */
+function finishDataset(xs, ys, states, pmvs, balance) {
+  // class balancing: duplicate minority votes until the classes match
+  if (balance) {
     const byClass = [[], [], []];
     ys.forEach((y, i) => byClass[y].push(i));
     const most = Math.max(...byClass.map((a) => a.length));
@@ -146,7 +151,6 @@ function makeDataset(n, ids, opt) {
       }
     });
   }
-
   // shuffle
   for (let i = xs.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -156,6 +160,50 @@ function makeDataset(n, ids, opt) {
     [pmvs[i], pmvs[j]] = [pmvs[j], pmvs[i]];
   }
   return { xs, ys, states, pmvs, n: xs.length };
+}
+
+/**
+ * The other way to get labels: no household, no exploration, no behaviour.
+ * Moments are drawn EVENLY across the whole sensor space and labelled straight
+ * from the comfort theory (PMV, ISO 7730) — what a lab study would produce.
+ * Coverage is perfect and uniform; the price is that many sampled moments are
+ * ones no lived-in home ever visits, and the occupants inferred from them
+ * (asleep at noon, a draught in a closed winter room) follow the sensors, not
+ * a routine.
+ */
+function makeUniformDataset(n, ids, opt) {
+  const xs = [], ys = [], states = [], pmvs = [];
+  const F = {};
+  FEATURES.forEach((f) => (F[f.id] = f));
+  const k = opt.sensorNoise || 0;
+  for (let i = 0; i < n; i++) {
+    const s = {
+      ta: rand(F.ta.min, F.ta.max),
+      rh: rand(F.rh.min, F.rh.max),
+      tw: rand(F.tw.min, F.tw.max),
+      tout: rand(F.tout.min, F.tout.max),
+      hour: rand(0, 24),
+      doy: pickDoy(opt.coverage),
+      mov: rand(0, 1),
+      vair: rand(0, 1),
+    };
+    // the sensors report the moment imperfectly, same as in the simulation
+    const m = {
+      ta: s.ta + 0.15 * k * randn(),
+      rh: clamp(s.rh + 2.0 * k * randn(), 10, 100),
+      tw: s.tw + 0.2 * k * randn(),
+      tout: s.tout + 0.3 * k * randn(),
+      hour: s.hour, doy: s.doy,
+      mov: clamp(s.mov + 0.02 * k * randn(), 0, 1),
+      vair: Math.max(0, s.vair + 0.015 * k * randn()),
+    };
+    const v = voteSample(m, opt.pref, opt.sigma);
+    xs.push(encodeState(m, ids));
+    ys.push(v.label);
+    states.push(m);
+    pmvs.push(v.pmv);
+  }
+  return finishDataset(xs, ys, states, pmvs, opt.balance);
 }
 
 /** Class counts of a dataset, for the data panel. */
