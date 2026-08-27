@@ -103,6 +103,7 @@ function rebuildModel() {
   $('layCount').textContent = state.hidden.length;
   $('paramCount').textContent = model.paramCount().toLocaleString('en-US') + ' parameters';
   buildLayerControls();
+  $('qtResult').innerHTML = '';        // that score belonged to the old weights
   evaluate(); renderMetrics(); renderRunTarget(); renderMath(true);
 }
 

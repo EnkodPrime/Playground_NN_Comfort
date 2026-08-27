@@ -172,12 +172,14 @@ function fmtTick(f, v) {
 
 /**
  * Which training votes lie near the current slice? Distance is measured in the
- * encoded space of the NON-axis features; close votes are opaque, far ones
- * fade out (or are hidden unless "all votes" is ticked).
+ * encoded space of the NON-axis features of the FULL state — including sensors
+ * the network is not using: a vote from a summer night is not "the same slice"
+ * as a winter evening just because the season input is switched off. Close
+ * votes are opaque, far ones fade out (or hide unless "all votes" is ticked).
  */
 function votesNearSlice(ds, ids, probe, fx, fy, showAll, limit) {
   const out = [];
-  const others = ids.filter((id) => id !== fx.id && id !== fy.id);
+  const others = FEATURES.map((f) => f.id).filter((id) => id !== fx.id && id !== fy.id);
   const pv = encodeState(probe, others);
   const n = Math.min(ds.n, limit || 700);
   for (let i = 0; i < n; i++) {
