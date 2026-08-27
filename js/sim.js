@@ -86,8 +86,8 @@ function stepOccupancy(s) {
   if (h >= s.bed || h < s.wake) { act = 0.03; asleep = true; }
   else if (h < s.wake + 1.5) { act = 0.55; }              // the morning rush
   else if (!weekend && h < 17.5) {
-    if (s._dayHome === undefined) s._dayHome = Math.random() < 0.2;
-    n = s._dayHome ? 1 : 0; act = 0.3;                    // usually at work
+    if (s._dayHome === undefined) s._dayHome = Math.random() < 0.35;
+    n = s._dayHome ? 1 : 0; act = 0.3;                    // at work, or a home-office day
   } else if (weekend && h < 17.5) {
     if (s._wkOut === undefined) s._wkOut = Math.random() < 0.5;
     n = (s._wkOut && h >= 15) ? 0 : res; act = 0.42;      // maybe an afternoon out
@@ -189,7 +189,10 @@ function simMaybeVote(s, pref, sigma, sensors) {
   const since = s.minute - s.lastVoteMin;
   const truth = comfortTruth(sensors, pref);
   const changed = Math.abs(truth.pmv - s.lastVotePmv) > 0.7 && since > 8;
-  const period = s.occ.asleep ? 150 : 32;
+  // A quiet night is continuous implicit feedback — nobody complained for
+  // hours — so sleep is sampled almost as densely as waking hours, or the
+  // night side of the comfort zone gets several times fewer examples.
+  const period = s.occ.asleep ? 45 : 32;
   const due = since > period * rand(0.7, 1.5);
   if (!due && !changed) return null;
   // Sleepers too must produce COMFORTABLE examples, not only complaints: a
