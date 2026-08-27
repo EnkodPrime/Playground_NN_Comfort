@@ -86,13 +86,18 @@ function climateMean(doy) {
 /** Is that hour normally spent asleep? Used with low movement to infer "in bed". */
 function isNight(hour) { return hour >= 22.75 || hour < 6.75; }
 
+/** Hours one could plausibly be in bed — households differ and drift day to
+ * day, so the truth infers "asleep" from low movement anywhere in this window,
+ * not from one fixed bedtime. */
+function sleepHours(hour) { return hour >= 21.5 || hour < 9.5; }
+
 /**
  * Clothing the occupants are wearing, derived from the state the network sees.
  * People dress by season, not by the instantaneous weather; in bed a duvet adds
  * a lot of insulation — the reason bedrooms are comfortable so much cooler.
  */
 function cloOf(doy, hour, mov) {
-  const asleep = isNight(hour) && mov < 0.12;
+  const asleep = sleepHours(hour) && mov < 0.12;
   let clo = clamp(0.9 - 0.02 * (climateMean(doy) - 5), 0.45, 1.1);
   if (asleep) {
     // bed and bedding: a thick duvet in January, little more than a sheet in
@@ -106,7 +111,7 @@ function cloOf(doy, hour, mov) {
 
 /** Metabolic rate from the movement level the sensor reports. */
 function metOf(hour, mov) {
-  const asleep = isNight(hour) && mov < 0.12;
+  const asleep = sleepHours(hour) && mov < 0.12;
   if (asleep) return 0.75;
   return 0.9 + 1.0 * clamp(mov, 0, 1);
 }

@@ -63,8 +63,18 @@ function simInit(cfg) {
     mov: 0, vair: 0.05, rh: 50,
     lastVoteMin: -999, lastVotePmv: 0,
   };
+  drawSleepTimes(s);
   stepOccupancy(s);
   return s;
+}
+
+/** Tonight's bedtime and tomorrow's alarm — different every day, later at
+ * weekends. Fixed clock times would stamp the dataset with artificial vertical
+ * stripes of votes at the exact same minute of every simulated day. */
+function drawSleepTimes(s) {
+  const weekend = s.dow >= 5;
+  s.wake = 6.75 + rand(-0.5, 0.9) + (weekend ? rand(0.3, 1.2) : 0);
+  s.bed = 22.75 + rand(-0.6, 0.9);
 }
 
 /** Occupancy and activity from the time of day. Rough but recognisable. */
@@ -73,8 +83,8 @@ function stepOccupancy(s) {
   const res = s.cfg.residents;
   let n = res, act = 0.35, asleep = false;
 
-  if (h >= 22.75 || h < 6.75) { act = 0.03; asleep = true; }
-  else if (h < 8.25) { act = 0.55; }                      // the morning rush
+  if (h >= s.bed || h < s.wake) { act = 0.03; asleep = true; }
+  else if (h < s.wake + 1.5) { act = 0.55; }              // the morning rush
   else if (!weekend && h < 17.5) {
     if (s._dayHome === undefined) s._dayHome = Math.random() < 0.2;
     n = s._dayHome ? 1 : 0; act = 0.3;                    // usually at work
@@ -84,7 +94,7 @@ function stepOccupancy(s) {
   } else {
     act = (h >= 18.5 && h < 19.25) ? 0.6 : 0.35;          // cooking, then the sofa
   }
-  if (h < 0.12) { s._dayHome = undefined; s._wkOut = undefined; }
+  if (h < 0.12) { s._dayHome = undefined; s._wkOut = undefined; drawSleepTimes(s); }
 
   n += s.guests;
   if (n === 0) act = 0;
@@ -179,10 +189,13 @@ function simMaybeVote(s, pref, sigma, sensors) {
   const since = s.minute - s.lastVoteMin;
   const truth = comfortTruth(sensors, pref);
   const changed = Math.abs(truth.pmv - s.lastVotePmv) > 0.7 && since > 8;
-  const period = s.occ.asleep ? 180 : 32;
+  const period = s.occ.asleep ? 150 : 32;
   const due = since > period * rand(0.7, 1.5);
   if (!due && !changed) return null;
-  if (s.occ.asleep && !changed && Math.abs(truth.pmv) < 0.9) return null; // sleeping fine
+  // Sleepers too must produce COMFORTABLE examples, not only complaints: a
+  // night with no discomfort is evidence, reported as the calm assessment of
+  // someone stirring (or the morning-after "slept fine"). Without these the
+  // night-time zone has no positive examples at all and cannot be learned.
   s.lastVoteMin = s.minute;
   s.lastVotePmv = truth.pmv;
   const v = voteSample(sensors, pref, sigma);

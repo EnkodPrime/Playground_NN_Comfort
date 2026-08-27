@@ -178,10 +178,8 @@ function randomState(coverage) {
   // indoors is bounded by what heater and weather can do: a winter room tops
   // out around 27 °C, a summer room will not drop to 12 °C
   const ta = rand(Math.max(12, tout - 6), Math.min(30, Math.max(tout + 2, 20) + 7));
-  const night = isNight(hour);
-  const mov = night
-    ? (Math.random() < 0.85 ? rand(0.01, 0.08) : rand(0.15, 0.45))
-    : rand(0.1, 0.8);
+  const inBed = sleepHours(hour) ? (isNight(hour) ? 0.85 : 0.4) : 0;
+  const mov = Math.random() < inBed ? rand(0.01, 0.08) : rand(0.1, 0.8);
   return {
     ta,
     rh: clamp(rand(28, 68) - 0.8 * (ta - 21), 18, 92),

@@ -364,7 +364,7 @@ function renderReadout() {
     ', ' + truth.ppd.toFixed(0) + '% dissatisfied) — ' +
     (agree ? '<span class="ok">match</span>' : '<span class="bad">mismatch</span>') +
     '<br><span style="color:#7b8794">assumed ' + truth.met.toFixed(2) + ' met, ' +
-    truth.clo.toFixed(2) + ' clo' + (isNight(state.probe.hour) && state.probe.mov < 0.12 ? ' (asleep, duvet)' : '') +
+    truth.clo.toFixed(2) + ' clo' + (sleepHours(state.probe.hour) && state.probe.mov < 0.12 ? ' (asleep, in bed)' : '') +
     '</span></div>';
   $('probeReadout').innerHTML = html;
 }
