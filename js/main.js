@@ -422,8 +422,8 @@ function quickTest() {
     else if (y === c) fn++;
   }
   const f1 = (2 * tp) / Math.max(1, 2 * tp + fp + fn);
-  let html = '<div class="head"><span>vs the noiseless model</span><b>' +
-    (ok / N * 100).toFixed(1) + '%</b></div>';
+  let html = '<div class="head"><span>vs the noiseless model · epoch ' +
+    Math.floor(state.epoch) + '</span><b>' + (ok / N * 100).toFixed(1) + '%</b></div>';
   CLASSES.forEach((c, i) => {
     const r = per[i][1] ? per[i][0] / per[i][1] : 0;
     html += '<div class="bar"><span class="nm">' + c.name + '</span>' +
