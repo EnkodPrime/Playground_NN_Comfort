@@ -51,6 +51,19 @@ let pf = null;             // forward pass at the probe (activations for the ari
 
 const $ = (id) => document.getElementById(id);
 
+/**
+ * Width available to a canvas, measured from its PARENT. Asking the canvas for
+ * its own clientWidth after dpiSetup fixed an inline width creates a feedback
+ * loop: at browser zoom levels other than 100% the rounding loses a pixel per
+ * redraw and the chart slowly shrinks to nothing.
+ */
+function availWidth(el) {
+  const par = el.parentElement;
+  const cs = getComputedStyle(par);
+  return Math.max(60, Math.round(
+    par.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)));
+}
+
 function activeIds() { return FEATURES.map((f) => f.id).filter((id) => state.features[id]); }
 /** The training/eval input array matching the current architecture. */
 function dataX(ds) { return state.arch === 'cnn' ? ds.ws : ds.xs; }
@@ -385,10 +398,10 @@ function renderMetrics() {
   $('lossTest').textContent = lastMetrics.test.loss.toFixed(3);
   $('accTest').textContent = (lastMetrics.test.acc * 100).toFixed(1) + '%';
   $('f1Comf').textContent = (comfF1(lastMetrics.test.conf) * 100).toFixed(1) + '%';
-  const lossC = $('loss');
-  drawLossChart(dpiSetup(lossC, lossC.clientWidth, 110), lossC.clientWidth, 110, hTrain, hTest);
-  const confC = $('conf');
-  drawConfusion(dpiSetup(confC, confC.clientWidth, 150), confC.clientWidth, 150, lastMetrics.test.conf, CLASSES);
+  const lossC = $('loss'), lw = availWidth(lossC);
+  drawLossChart(dpiSetup(lossC, lw, 110), lw, 110, hTrain, hTest);
+  const confC = $('conf'), cw = availWidth(confC);
+  drawConfusion(dpiSetup(confC, cw, 150), cw, 150, lastMetrics.test.conf, CLASSES);
 }
 
 /* ------------------------------------------------------- comfort map */
@@ -560,12 +573,13 @@ function renderLoop() {
   $('loopStatus').innerHTML = loopStatusHtml(loopOpt());
   const draw = (id, h, fn) => {
     const c = $(id);
-    const ctx = dpiSetup(c, c.clientWidth, h);
+    const w = availWidth(c);
+    const ctx = dpiSetup(c, w, h);
     try {
-      fn(ctx, c.clientWidth, h);
+      fn(ctx, w, h);
     } catch (err) {
       // never a silently blank chart: name the problem where it happened
-      ctx.clearRect(0, 0, c.clientWidth, h);
+      ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = '#b0561d';
       ctx.font = '11px system-ui,sans-serif';
       ctx.fillText('chart error: ' + err.message, 8, 18);
