@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NN Comfort Playground — learning a home's comfort zone</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%232f3f4f%22/><text x=%2250%22 y=%2274%22 font-size=%2264%22 text-anchor=%22middle%22 fill=%22%23ffca7a%22>⌂</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=10">
+<link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body>
 
@@ -13,7 +13,7 @@
   <div class="brand">
     <span class="logo">⌂</span>
     <div>
-      <h1>NN Comfort Playground <span class="ver">v10 · 2026-08-27</span></h1>
+      <h1>NN Comfort Playground <span class="ver">v11 · 2026-08-27</span></h1>
       <p>A network learns the comfort zone from votes, then runs the heating — in the browser, no libraries</p>
     </div>
   </div>
@@ -82,10 +82,34 @@
       <span class="cchip comf"></span> comfortable, <span class="cchip warm"></span> too warm.
       The votes come from a physical comfort model (PMV) the network never sees.</p>
 
-    <label class="ctl block" title="Where the labelled examples come from. Simulated household: people vote as they live — uneven, life-shaped coverage. Controlled study: only the inputs the network can see are swept, evenly over their whole range; everything else follows one typical household (asleep at night, ordinary walls, humidity and weather), labelled straight from the comfort theory."><span>Votes come from</span>
+    <label class="ctl block" title="Where the labelled examples come from. Simulated household: people vote as they live — uneven, life-shaped coverage. Controlled study: only the inputs the network can see are swept, evenly over their whole range; everything else follows one typical household (asleep at night, ordinary walls, humidity and weather), labelled straight from the comfort theory. Switched-off time inputs are set by the Study season / Study hour controls below — the probe sliders on the map only inspect, they never shape the data."><span>Votes come from</span>
       <select id="voteSource">
-        <option value="sim" selected>Simulated household — lived-in, uneven</option>
-        <option value="uniform">Controlled study — sweep only the active inputs</option>
+        <option value="sim">Simulated household — lived-in, uneven</option>
+        <option value="uniform" selected>Controlled study — sweep only the active inputs</option>
+      </select>
+    </label>
+
+    <label class="ctl block" id="studyDayWrap" style="display:none"
+      title="The controlled study happens in ONE season — this one. The network cannot see it (the season input is off), but the people whose votes are generated are dressed for it. Change it and regenerate to move the whole zone.">
+      <span>Study season</span>
+      <select id="studyDoy">
+        <option value="15" selected>January</option><option value="46">February</option>
+        <option value="74">March</option><option value="105">April</option>
+        <option value="135">May</option><option value="166">June</option>
+        <option value="196">July</option><option value="227">August</option>
+        <option value="258">September</option><option value="288">October</option>
+        <option value="319">November</option><option value="349">December</option>
+      </select>
+    </label>
+
+    <label class="ctl block" id="studyHourWrap" style="display:none"
+      title="With the time input off, every sampled moment of the study happens at this hour.">
+      <span>Study hour</span>
+      <select id="studyHour">
+        <option value="3">03:00 — night, asleep</option>
+        <option value="8">08:00 — morning</option>
+        <option value="13.5">13:30 — afternoon</option>
+        <option value="19.5" selected>19:30 — evening</option>
       </select>
     </label>
 
@@ -319,13 +343,13 @@
   </ul>
 </footer>
 
-<script src="js/comfort.js?v=10"></script>
-<script src="js/sim.js?v=10"></script>
-<script src="js/data.js?v=10"></script>
-<script src="js/nn.js?v=10"></script>
-<script src="js/viz.js?v=10"></script>
-<script src="js/map.js?v=10"></script>
-<script src="js/loop.js?v=10"></script>
-<script src="js/main.js?v=10"></script>
+<script src="js/comfort.js?v=11"></script>
+<script src="js/sim.js?v=11"></script>
+<script src="js/data.js?v=11"></script>
+<script src="js/nn.js?v=11"></script>
+<script src="js/viz.js?v=11"></script>
+<script src="js/map.js?v=11"></script>
+<script src="js/loop.js?v=11"></script>
+<script src="js/main.js?v=11"></script>
 </body>
 </html>

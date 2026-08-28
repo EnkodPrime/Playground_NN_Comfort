@@ -1,14 +1,17 @@
 /* main.js — application state, UI wiring and the training loop. */
 
 const state = {
-  features: { ta: true, rh: true, tw: true, tout: true, hour: true, doy: true, mov: true, vair: true },
+  // the default is the cleanest experiment: two inputs, controlled study
+  features: { ta: true, rh: false, tw: false, tout: false, hour: true, doy: false, mov: false, vair: false },
   hidden: [6, 6],
   activation: 'relu',
   lr: 0.003,
   l2: 0,
   batch: 16,
   coverage: 'year',
-  voteSource: 'sim',   // 'sim' — lived-in household; 'uniform' — theory sampling
+  voteSource: 'uniform',   // 'sim' — lived-in household; 'uniform' — controlled study
+  studyDoy: 15,        // the study's season, when the season input is off
+  studyHour: 19.5,     // the study's hour, when the time input is off
   pref: 0,             // occupant preference: shifts the true PMV scale
   sigma: 0.15,         // vote inconsistency
   sensorNoise: 0.5,
@@ -19,8 +22,8 @@ const state = {
   stopAt: null,        // the epoch the current run stops at, or null for an open-ended run
   epoch: 0,
   probe: {},           // the current "moment in the room" — drives map, nodes and arithmetic
-  mapX: 'ta',
-  mapY: 'rh',
+  mapX: 'hour',
+  mapY: 'ta',
   showTruth: true,
   showVotes: true,
   allVotes: false,
@@ -53,7 +56,7 @@ function dataOpt() {
   return {
     coverage: state.coverage, pref: state.pref, sigma: state.sigma,
     sensorNoise: state.sensorNoise, balance: state.balance,
-    pin: Object.assign({}, state.probe),
+    pin: { ta: 21, hour: state.studyHour, doy: state.studyDoy },
     insulation: +$('insul').value, pmax: +$('pmax').value, heater: $('heaterType').value,
   };
 }
@@ -70,6 +73,21 @@ function markTrained() { gridsDirty = true; mapNetDirty = true; }
 function markProbeDirty() {
   gridsDirty = true; mapNetDirty = true; mapTruthDirty = true;
   sliceVotesDirty = true; mapDrawDirty = true;
+}
+
+/**
+ * The controlled study's deterministic world: inactive time anchors come from
+ * the explicit Study season / Study hour settings in the Data panel — never
+ * from the probe sliders, which only inspect — and every other unseen sensor
+ * follows the typical household.
+ */
+function studyFill(s, keep) {
+  const a = {};
+  keep.forEach((id) => (a[id] = true));
+  const o = Object.assign({}, s);
+  if (!a.doy) o.doy = state.studyDoy;
+  if (!a.hour) o.hour = state.studyHour;
+  return typicalFill(o, keep);
 }
 
 /* -------------------------------------------------------------- data */
@@ -322,14 +340,17 @@ function renderMapMaybe() {
   }
   if (mapTruthDirty && slow) {
     const fill = state.voteSource === 'uniform'
-      ? (s) => typicalFill(s, activeIds().concat([state.mapX, state.mapY]))
+      ? (s) => studyFill(s, activeIds().concat([state.mapX, state.mapY]))
       : null;
     mapTruth = state.showTruth ? mapEvalTruth(state.probe, featX(), featY(), state.pref, fill) : null;
     mapTruthDirty = false; changed = true;
   }
   if (sliceVotesDirty && slow) {
+    const ref = state.voteSource === 'uniform'
+      ? studyFill(state.probe, activeIds().concat([state.mapX, state.mapY]))
+      : state.probe;
     sliceVotes = state.showVotes
-      ? votesNearSlice(train, activeIds(), state.probe, featX(), featY(), state.allVotes)
+      ? votesNearSlice(train, activeIds(), ref, featX(), featY(), state.allVotes)
       : null;
     sliceVotesDirty = false; changed = true;
   }
@@ -358,7 +379,7 @@ function drawMap() {
  * generated votes — so the verdict compares like with like. */
 function probeTruthState() {
   return state.voteSource === 'uniform'
-    ? typicalFill(state.probe, activeIds())
+    ? studyFill(state.probe, activeIds())
     : state.probe;
 }
 
@@ -430,7 +451,7 @@ function quickState(ids) {
     else if (id === 'doy') s.doy = pickDoy(state.coverage);
     else s[id] = rand(f.min, f.max);
   });
-  return typicalFill(s, ids);
+  return studyFill(s, ids);
 }
 
 /**
@@ -518,6 +539,15 @@ function syncProbeDim() {
     const row = $('probe_' + f.id);
     if (row) row.classList.toggle('dim', !state.features[f.id]);
   });
+  syncStudyControls();
+}
+
+/** The study's season/hour settings appear only when they are actually used:
+ * controlled mode, with the corresponding input switched off. */
+function syncStudyControls() {
+  const u = state.voteSource === 'uniform';
+  $('studyDayWrap').style.display = u && !state.features.doy ? '' : 'none';
+  $('studyHourWrap').style.display = u && !state.features.hour ? '' : 'none';
 }
 
 function buildProbeSliders() {
@@ -789,7 +819,19 @@ function bindUI() {
   };
 
   // data panel
-  $('voteSource').onchange = (e) => { state.voteSource = e.target.value; regenData(); evaluate(); renderMetrics(); };
+  $('voteSource').onchange = (e) => {
+    state.voteSource = e.target.value;
+    syncStudyControls();
+    regenData(); evaluate(); renderMetrics(); markProbeDirty();
+  };
+  $('studyDoy').onchange = (e) => {
+    state.studyDoy = +e.target.value;
+    regenData(); evaluate(); renderMetrics(); markProbeDirty();
+  };
+  $('studyHour').onchange = (e) => {
+    state.studyHour = +e.target.value;
+    regenData(); evaluate(); renderMetrics(); markProbeDirty();
+  };
   $('coverage').onchange = (e) => { state.coverage = e.target.value; regenData(); evaluate(); renderMetrics(); };
   const pref = $('pref'), sigma = $('sigma'), snoise = $('snoise'), nex = $('nex');
   pref.oninput = () => {
@@ -888,6 +930,9 @@ function bindUI() {
 
 /* -------------------------------------------------------------- init */
 function init() {
+  $('voteSource').value = state.voteSource;
+  $('studyDoy').value = state.studyDoy;
+  $('studyHour').value = state.studyHour;
   buildFeatureList();
   buildProbeSliders();
   buildAxisSelects();

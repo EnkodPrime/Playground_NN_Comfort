@@ -177,8 +177,8 @@ function finishDataset(xs, ys, states, pmvs, balance) {
  * construction. Everything the network cannot see follows one typical
  * household instead of being randomised: the occupants sleep at night (with
  * day-to-day jitter), walls sit just below the air, humidity and weather take
- * physically ordinary values, and switched-off time inputs are pinned at the
- * probe sliders. Varying what the model sees while holding the rest typical
+ * physically ordinary values, and switched-off time inputs come from the
+ * explicit Study season / Study hour settings (opt.pin). Varying what the model sees while holding the rest typical
  * is what keeps the hidden dimensions from smearing the labels into noise.
  */
 function makeUniformDataset(n, ids, opt) {
