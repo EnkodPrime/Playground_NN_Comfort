@@ -353,9 +353,19 @@ function drawMap() {
 }
 
 /* ----------------------------------------------------- probe & votes */
+/** The state the TRUE model is asked about at the probe. In controlled-study
+ * mode the unseen sensors follow the study's typical household — same as the
+ * generated votes — so the verdict compares like with like. */
+function probeTruthState() {
+  return state.voteSource === 'uniform'
+    ? typicalFill(state.probe, activeIds())
+    : state.probe;
+}
+
 function renderReadout() {
   if (!pf) return;
-  const truth = comfortTruth(state.probe, state.pref);
+  const ts = probeTruthState();
+  const truth = comfortTruth(ts, state.pref);
   const nn = argmax(pf.probs);
   let html = '';
   CLASSES.forEach((c, i) => {
@@ -371,7 +381,8 @@ function renderReadout() {
     ', ' + truth.ppd.toFixed(0) + '% dissatisfied) — ' +
     (agree ? '<span class="ok">match</span>' : '<span class="bad">mismatch</span>') +
     '<br><span style="color:#7b8794">assumed ' + truth.met.toFixed(2) + ' met, ' +
-    truth.clo.toFixed(2) + ' clo' + (sleepHours(state.probe.hour) && state.probe.mov < 0.12 ? ' (asleep, in bed)' : '') +
+    truth.clo.toFixed(2) + ' clo' + (sleepHours(ts.hour) && ts.mov < 0.12 ? ' (asleep, in bed)' : '') +
+    (state.voteSource === 'uniform' ? ' · unseen sensors at the study\'s typical values' : '') +
     '</span></div>';
   $('probeReadout').innerHTML = html;
 }
@@ -732,7 +743,7 @@ function renderOutputMath(host, sel) {
   }
   h += '</table></div>';
 
-  const truth = comfortTruth(state.probe, state.pref);
+  const truth = comfortTruth(probeTruthState(), state.pref);
   const loss = -Math.log(Math.max(1e-9, pf.probs[truth.label]));
   h += '<h4>Against the true model at this moment</h4>' +
     '<div class="formula">true vote <span class="op">=</span> <b>' + CLASSES[truth.label].name +
