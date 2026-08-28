@@ -10,14 +10,22 @@
  * cyclic features (hour, season) become a sin/cos pair so that 23:59 and 00:01
  * end up next to each other. */
 const FEATURES = [
-  { id: 'ta',   name: 'Room temperature',    short: 'T room', unit: '°C',  min: 10,  max: 32,  mean: 21,   span: 8,    step: 0.1,  fmt: 1, dflt: 21 },
-  { id: 'rh',   name: 'Room humidity',       short: 'RH',     unit: '%',   min: 15,  max: 95,  mean: 50,   span: 25,   step: 1,    fmt: 0, dflt: 45 },
-  { id: 'tw',   name: 'Wall temperature',    short: 'T wall', unit: '°C',  min: 8,   max: 32,  mean: 20,   span: 8,    step: 0.1,  fmt: 1, dflt: 20 },
-  { id: 'tout', name: 'Outdoor temperature', short: 'T out',  unit: '°C',  min: -15, max: 35,  mean: 8,    span: 13,   step: 0.5,  fmt: 1, dflt: 3 },
-  { id: 'hour', name: 'Time of day',         short: 'Hour',   unit: 'h',   min: 0,   max: 24,  cyc: 24,    step: 0.25, fmt: 2, dflt: 19.5 },
-  { id: 'doy',  name: 'Day of year',         short: 'Season', unit: '',    min: 1,   max: 365, cyc: 365,   step: 1,    fmt: 0, dflt: 20 },
-  { id: 'mov',  name: 'Movement of people',  short: 'Move',   unit: '',    min: 0,   max: 1,   mean: 0.3,  span: 0.35, step: 0.01, fmt: 2, dflt: 0.32 },
-  { id: 'vair', name: 'Air movement',        short: 'Air v',  unit: 'm/s', min: 0,   max: 1,   mean: 0.15, span: 0.2,  step: 0.01, fmt: 2, dflt: 0.07 },
+  { id: 'ta',   name: 'Room temperature',    short: 'T room', unit: '°C',  min: 10,  max: 32,  mean: 21,   span: 8,    step: 0.1,  fmt: 1, dflt: 21,
+    tip: "The air temperature a thermostat's own sensor reports — the most direct comfort signal."},
+  { id: 'rh',   name: 'Room humidity',       short: 'RH',     unit: '%',   min: 15,  max: 95,  mean: 50,   span: 25,   step: 1,    fmt: 0, dflt: 45,
+    tip: "Relative humidity. Damp air feels different: sweat evaporates more slowly, so warm-humid feels warmer."},
+  { id: 'tw',   name: 'Wall temperature',    short: 'T wall', unit: '°C',  min: 8,   max: 32,  mean: 20,   span: 8,    step: 0.1,  fmt: 1, dflt: 20,
+    tip: "Surface temperature of walls and floor. Half of comfort is radiation — cold walls make 21 °C air feel chilly."},
+  { id: 'tout', name: 'Outdoor temperature', short: 'T out',  unit: '°C',  min: -15, max: 35,  mean: 8,    span: 13,   step: 0.5,  fmt: 1, dflt: 3,
+    tip: "The weather outside. It never touches the skin indoors, but it decides how people dress season by season."},
+  { id: 'hour', name: 'Time of day',         short: 'Hour',   unit: 'h',   min: 0,   max: 24,  cyc: 24,    step: 0.25, fmt: 2, dflt: 19.5,
+    tip: "The clock, encoded as sin+cos so 23:59 and 00:01 are neighbours. Lets the network tell sleeping comfort from waking comfort."},
+  { id: 'doy',  name: 'Day of year',         short: 'Season', unit: '',    min: 1,   max: 365, cyc: 365,   step: 1,    fmt: 0, dflt: 20,
+    tip: "The season, also sin+cos so December meets January. People wear very different clothes in July and January."},
+  { id: 'mov',  name: 'Movement of people',  short: 'Move',   unit: '',    min: 0,   max: 1,   mean: 0.3,  span: 0.35, step: 0.01, fmt: 2, dflt: 0.32,
+    tip: "A motion-sensor reading: how much the people are moving. Active bodies make their own heat and prefer it cooler."},
+  { id: 'vair', name: 'Air movement',        short: 'Air v',  unit: 'm/s', min: 0,   max: 1,   mean: 0.15, span: 0.2,  step: 0.01, fmt: 2, dflt: 0.07,
+    tip: "Air speed — draughts. Moving air carries heat off the skin, so the same temperature feels colder."},
 ];
 const FEAT_INDEX = {};
 FEATURES.forEach((f, i) => (FEAT_INDEX[f.id] = i));

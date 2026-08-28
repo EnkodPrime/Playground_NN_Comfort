@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NN Comfort Playground — learning a home's comfort zone</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%232f3f4f%22/><text x=%2250%22 y=%2274%22 font-size=%2264%22 text-anchor=%22middle%22 fill=%22%23ffca7a%22>⌂</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=7">
+<link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body>
 
@@ -13,11 +13,11 @@
   <div class="brand">
     <span class="logo">⌂</span>
     <div>
-      <h1>NN Comfort Playground <span class="ver">v7 · 2026-08-27</span></h1>
+      <h1>NN Comfort Playground <span class="ver">v8 · 2026-08-27</span></h1>
       <p>A network learns the comfort zone from votes, then runs the heating — in the browser, no libraries</p>
     </div>
   </div>
-  <div class="epochbox">
+  <div class="epochbox" title="Training is counted in epochs: one epoch means the network has worked through every example in the training set once.">
     <span class="lbl">Epoch</span>
     <span id="epoch" class="val">000,000</span><span id="epochTgt" class="tgt"></span>
   </div>
@@ -25,8 +25,8 @@
 
 <section class="toolbar">
   <button id="btnPlay" class="play" title="Run / pause">▶</button>
-  <button id="btnStep" class="icon" title="One epoch">⏭</button>
-  <button id="btnReset" class="icon" title="Reset the weights">⟳</button>
+  <button id="btnStep" class="icon" title="Train for exactly one epoch, then stop — one careful step at a time.">⏭</button>
+  <button id="btnReset" class="icon" title="Forget everything: fresh random weights, epoch counter back to zero. The data stays.">⟳</button>
 
   <label class="ctl"><span>Run for</span>
     <span class="epochsfield">
@@ -40,14 +40,14 @@
     </datalist>
   </label>
 
-  <label class="ctl"><span>Learning rate</span>
+  <label class="ctl" title="How big a step the network takes each time it corrects itself after a mistake. Too small and learning crawls; too big and it overshoots the answer and never settles."><span>Learning rate</span>
     <select id="lr">
       <option>0.0003</option><option>0.001</option><option selected>0.003</option>
       <option>0.01</option><option>0.03</option><option>0.1</option>
     </select>
   </label>
 
-  <label class="ctl"><span>Activation</span>
+  <label class="ctl" title="The bend applied inside every unit. Without a nonlinear function the whole network would collapse into one straight line and could only draw straight boundaries."><span>Activation</span>
     <select id="act">
       <option value="relu" selected>ReLU</option>
       <option value="tanh">Tanh</option>
@@ -56,7 +56,7 @@
     </select>
   </label>
 
-  <label class="ctl"><span>L2 regularisation</span>
+  <label class="ctl" title="A small penalty on large weights. It discourages the network from memorising the noise in individual votes instead of learning the pattern (overfitting)."><span>L2 regularisation</span>
     <select id="l2">
       <option value="0" selected>0</option>
       <option value="0.0001">0.0001</option>
@@ -65,7 +65,7 @@
     </select>
   </label>
 
-  <label class="ctl"><span>Batch size</span>
+  <label class="ctl" title="How many examples are averaged into one weight update. Small batches: frequent but noisy corrections. Large batches: smooth but fewer per epoch."><span>Batch size</span>
     <select id="batch">
       <option>4</option><option>8</option><option selected>16</option><option>32</option>
     </select>
@@ -82,14 +82,14 @@
       <span class="cchip comf"></span> comfortable, <span class="cchip warm"></span> too warm.
       The votes come from a physical comfort model (PMV) the network never sees.</p>
 
-    <label class="ctl block"><span>Votes come from</span>
+    <label class="ctl block" title="Where the labelled examples come from: a simulated household that votes as it lives (uneven, life-shaped coverage), or moments sampled evenly everywhere and labelled straight from the comfort theory."><span>Votes come from</span>
       <select id="voteSource">
         <option value="sim" selected>Simulated household — lived-in, uneven</option>
         <option value="uniform">Uniform sampling — pure comfort theory</option>
       </select>
     </label>
 
-    <label class="ctl block"><span>Season coverage</span>
+    <label class="ctl block" title="Which part of the year the data covers. A network trained only on winter votes has never seen people dressed for summer — and it shows."><span>Season coverage</span>
       <select id="coverage">
         <option value="year" selected>All year</option>
         <option value="winter">Winter only (Nov–Feb)</option>
@@ -99,31 +99,31 @@
     </label>
 
     <label class="slider">
-      <span>Occupant preference <b id="prefVal">neutral</b></span>
+      <span title="Shifts the whole truth: some households simply like it warmer (+) or cooler (−) than the textbook. All votes follow this taste.">Occupant preference <b id="prefVal">neutral</b></span>
       <input type="range" id="pref" min="-0.8" max="0.8" step="0.05" value="0">
     </label>
 
     <label class="slider">
-      <span>Vote inconsistency <b id="sigmaVal">0.15</b></span>
+      <span title="People are not thermometers: the same person in the same room answers differently on different days. This is the size of that randomness; 0 makes the voters perfectly consistent robots.">Vote inconsistency <b id="sigmaVal">0.15</b></span>
       <input type="range" id="sigma" min="0" max="0.5" step="0.01" value="0.15">
     </label>
 
     <label class="slider">
-      <span>Sensor noise <b id="snoiseVal">0.5</b></span>
+      <span title="Measurement error added to what the sensors report — real thermometers and humidity sensors are not exact.">Sensor noise <b id="snoiseVal">0.5</b></span>
       <input type="range" id="snoise" min="0" max="2" step="0.1" value="0.5">
     </label>
 
     <label class="slider">
-      <span>Votes to collect <b id="nexVal">1200</b></span>
+      <span title="The size of the training set. More votes draw a sharper comfort boundary — but in a real home each one costs someone saying something.">Votes to collect <b id="nexVal">1200</b></span>
       <input type="range" id="nex" min="240" max="2400" step="60" value="1200">
     </label>
 
-    <label class="check"><input type="checkbox" id="balance" checked> balance the classes</label>
+    <label class="check" title="Duplicates the rarer votes until 'too cold', 'comfortable' and 'too warm' are equally common, so the network cannot score well by always betting on the most frequent answer."><input type="checkbox" id="balance" checked> balance the classes</label>
 
-    <h3>Inputs</h3>
+    <h3 title="The sensors the network is allowed to see. Remove one and the network loses every concept that needed it.">Inputs</h3>
     <div id="featList" class="featlist"></div>
 
-    <button id="btnData" class="wide">Regenerate data</button>
+    <button id="btnData" class="wide" title="Throw the current examples away and collect a fresh dataset with the settings above. The network's weights are kept.">Regenerate data</button>
     <div id="countRow" class="countrow"></div>
     <p class="hint small">The test set is 40% of the training size, from separately simulated days.</p>
   </aside>
@@ -132,12 +132,12 @@
   <section class="panel center">
     <div class="centerhead">
       <h2>Architecture</h2>
-      <div class="layerbtns">
+      <div class="layerbtns" title="How many layers of units sit between the sensors and the vote. Depth lets simple rules combine into more complicated ones.">
         <span id="layerLbl">Hidden layers</span>
         <button id="layMinus">−</button>
         <b id="layCount">2</b>
         <button id="layPlus">+</button>
-        <span class="params" id="paramCount">— parameters</span>
+        <span class="params" id="paramCount" title="The total number of adjustable weights — the network's entire memory. Everything it knows about comfort is stored in these numbers.">— parameters</span>
       </div>
     </div>
     <div id="netWrap" class="netwrap">
@@ -155,15 +155,15 @@
   <aside class="panel">
     <h2>Results</h2>
     <div class="metrics">
-      <div><span class="lbl">Training loss</span><span id="lossTrain" class="val">—</span></div>
-      <div><span class="lbl">Test loss</span><span id="lossTest" class="val red">—</span></div>
-      <div><span class="lbl">Test accuracy</span><span id="accTest" class="val big">—</span></div>
-      <div><span class="lbl">"Comfortable" F1</span><span id="f1Comf" class="val">—</span></div>
+      <div title="How wrong the network still is on the examples it trains on (cross-entropy; 0 would be perfect). Falling = it is learning."><span class="lbl">Training loss</span><span id="lossTrain" class="val">—</span></div>
+      <div title="The same error, measured on examples it never trained on. If this rises while training loss keeps falling, the network is memorising its data instead of learning the pattern — overfitting."><span class="lbl">Test loss</span><span id="lossTest" class="val red">—</span></div>
+      <div title="The share of unseen votes the network predicts correctly. Voters are noisy, so even a perfect network cannot reach 100% here — the quick test below is the cleaner exam."><span class="lbl">Test accuracy</span><span id="accTest" class="val big">—</span></div>
+      <div title="How exactly the network finds the 'comfortable' zone itself: one number balancing false alarms against misses for that class. High only when the zone's edges sit in the right place."><span class="lbl">"Comfortable" F1</span><span id="f1Comf" class="val">—</span></div>
     </div>
-    <canvas id="loss" class="chart"></canvas>
+    <canvas id="loss" class="chart" title="Error over training time: blue = training set, red = test set. Watch the gap between them — when it opens, the network has started memorising instead of learning."></canvas>
     <div class="legend"><span class="dot blue"></span>training <span class="dot red"></span>test</div>
 
-    <h3>Confusion matrix (test, %)</h3>
+    <h3 title="Rows: what the occupants actually said. Columns: what the network answered. The diagonal is agreement; everything off it is a specific kind of mistake.">Confusion matrix (test, %)</h3>
     <canvas id="conf" class="chart"></canvas>
     <p class="hint small">Rows are what the occupants said, columns what the network predicted.
       With noisy voters even a perfect network cannot reach 100% — the quick test in the map panel
@@ -175,11 +175,11 @@
 <section class="mappanel" id="mapPanel">
   <div class="maphead">
     <h2>Comfort map</h2>
-    <label class="ctl inline"><span>X axis</span><select id="mapX"></select></label>
-    <label class="ctl inline"><span>Y axis</span><select id="mapY"></select></label>
-    <label class="check"><input type="checkbox" id="showTruth" checked> true zone (dotted)</label>
-    <label class="check"><input type="checkbox" id="showVotes" checked> votes near this slice</label>
-    <label class="check"><input type="checkbox" id="allVotes"> all votes</label>
+    <label class="ctl inline" title="Which sensor runs along this axis of the map. Every sensor not on an axis is held at the probe sliders on the right."><span>X axis</span><select id="mapX"></select></label>
+    <label class="ctl inline" title="Which sensor runs along this axis of the map. Every sensor not on an axis is held at the probe sliders on the right."><span>Y axis</span><select id="mapY"></select></label>
+    <label class="check" title="The comfort boundary of the physics model that generates the votes — the answer key the network never sees. Learning worked when the colours fill this outline."><input type="checkbox" id="showTruth" checked> true zone (dotted)</label>
+    <label class="check" title="Only training votes whose other sensors are close to the probe values — the points that genuinely belong to this slice of the map."><input type="checkbox" id="showVotes" checked> votes near this slice</label>
+    <label class="check" title="Every training vote, even from very different moments (other seasons, hours, activity). Good for seeing the whole tangle the network has to sort out."><input type="checkbox" id="allVotes"> all votes</label>
   </div>
   <div class="mapgrid">
     <div>
@@ -190,14 +190,14 @@
         <i>Move</i> and watch the whole zone shift.</p>
     </div>
     <div class="probeside">
-      <h3>Probe — one moment in the room</h3>
+      <h3 title="One concrete moment: these slider values feed the network diagram, the map slice and the arithmetic panel. Drag them and everything follows.">Probe — one moment in the room</h3>
       <div id="probeSliders" class="probes"></div>
       <div class="probe">
-        <button id="btnRandState">Random moment</button>
-        <button id="btnSimState">From live loop</button>
+        <button id="btnRandState" title="Set the probe to a random plausible moment.">Random moment</button>
+        <button id="btnSimState" title="Copy the probe from the room being simulated in the live loop below.">From live loop</button>
       </div>
       <div id="probeReadout" class="readout"></div>
-      <button id="btnQuick" class="wide small">Quick test · 300 fresh moments</button>
+      <button id="btnQuick" class="wide small" title="The honest exam: 300 brand-new moments scored against the noiseless comfort model, free of voter noise. Errors cluster at the zone's edges, where even people disagree.">Quick test · 300 fresh moments</button>
       <div id="qtResult" class="qt"></div>
     </div>
   </div>
@@ -207,8 +207,8 @@
 <section class="looppanel" id="loopPanel">
   <div class="loophead">
     <h2>Live control loop</h2>
-    <button id="loopToggle" class="strplay">▶ Start loop</button>
-    <label class="ctl inline"><span>Speed</span>
+    <button id="loopToggle" class="strplay" title="Run the room minute by minute with the network in charge of the heater.">▶ Start loop</button>
+    <label class="ctl inline" title="How fast simulated time passes."><span>Speed</span>
       <select id="loopSpeed">
         <option value="5">×5 (5 min/s)</option>
         <option value="30" selected>×30</option>
@@ -216,27 +216,27 @@
         <option value="600">×600 (10 h/s)</option>
       </select>
     </label>
-    <label class="ctl inline"><span>Controller</span>
+    <label class="ctl inline" title="Who runs the heater: the network's learned comfort zone, a plain thermostat with a fixed target, or your hand on the power."><span>Controller</span>
       <select id="loopMode">
         <option value="nn" selected>NN comfort zone</option>
         <option value="thermo">Fixed thermostat</option>
         <option value="manual">Manual power</option>
       </select>
     </label>
-    <label class="ctl inline" id="setpointWrap" style="display:none"><span>Setpoint <b id="setpointVal">21.0°</b></span>
+    <label class="ctl inline" id="setpointWrap" style="display:none" title="The fixed thermostat's target temperature — the same number day and night, whoever is home."><span>Setpoint <b id="setpointVal">21.0°</b></span>
       <input type="range" id="setpoint" min="14" max="28" step="0.5" value="21">
     </label>
-    <label class="ctl inline" id="manualWrap" style="display:none"><span>Power <b id="manualVal">35%</b></span>
+    <label class="ctl inline" id="manualWrap" style="display:none" title="Heater power set by hand."><span>Power <b id="manualVal">35%</b></span>
       <input type="range" id="manual" min="0" max="1" step="0.05" value="0.35">
     </label>
-    <label class="ctl inline"><span>Heater</span>
+    <label class="ctl inline" title="The physical heater. A fan heater is quick and heats only the air; a radiator is slower and partly radiant; a masonry stove is very slow and mostly heats the walls."><span>Heater</span>
       <select id="heaterType">
         <option value="fan">Fan heater (fast, all air)</option>
         <option value="radiator" selected>Radiator</option>
         <option value="stove">Masonry stove (slow, radiant)</option>
       </select>
     </label>
-    <label class="ctl inline"><span>Max power</span>
+    <label class="ctl inline" title="The heater's size. An undersized heater cannot reach the zone on the coldest days; an oversized one overshoots more easily."><span>Max power</span>
       <select id="pmax">
         <option value="1000">1 kW</option>
         <option value="2000" selected>2 kW</option>
@@ -244,10 +244,10 @@
         <option value="4000">4 kW</option>
       </select>
     </label>
-    <label class="ctl inline"><span>Insulation <b id="insulVal">80</b> W/K</span>
+    <label class="ctl inline" title="Heat escaping through the walls per degree of indoor–outdoor difference: about 40 W/K is a well-insulated home, 160 a leaky one."><span>Insulation <b id="insulVal">80</b> W/K</span>
       <input type="range" id="insul" min="40" max="160" step="5" value="80">
     </label>
-    <label class="ctl inline"><span>Start in</span>
+    <label class="ctl inline" title="The month the simulated room starts in — changing it restarts the loop in that season."><span>Start in</span>
       <select id="startMonth">
         <option value="15" selected>January</option><option value="46">February</option>
         <option value="74">March</option><option value="105">April</option>
@@ -260,9 +260,9 @@
     <span class="wmbreak"></span>
     <div class="gen">
       <span class="genlbl">Disturb the room:</span>
-      <button id="btnWindow">🪟 Open a window</button>
-      <button id="btnParty">🎉 Guests arrive</button>
-      <label><input type="checkbox" id="learnVotes"> keep learning from the votes</label>
+      <button id="btnWindow" title="Airs the room: a rush of outdoor air and a draught until you press it again. Watch the learned setpoint react.">🪟 Open a window</button>
+      <button id="btnParty" title="Four guests for a couple of hours: extra body heat, moisture and movement — comfort now needs a cooler room.">🎉 Guests arrive</button>
+      <label title="Every vote cast in the live loop is added to the training set on the spot and the network trains on it immediately — the zone keeps adapting to the people."><input type="checkbox" id="learnVotes"> keep learning from the votes</label>
     </div>
   </div>
   <div id="loopStatus" class="strstatus">Loop stopped. Press ▶ to simulate the room with the network in charge.</div>
@@ -282,7 +282,7 @@
   <div class="mathhead">
     <h2 id="mathTitle">Arithmetic of the selected node</h2>
     <div class="posctl">
-      <button id="btnClearSel">Clear selection</button>
+      <button id="btnClearSel" title="Deselect the node and empty this panel.">Clear selection</button>
     </div>
   </div>
   <div id="mathBody" class="mathbody"><p class="empty">Click a node in the network diagram —
@@ -319,13 +319,13 @@
   </ul>
 </footer>
 
-<script src="js/comfort.js?v=7"></script>
-<script src="js/sim.js?v=7"></script>
-<script src="js/data.js?v=7"></script>
-<script src="js/nn.js?v=7"></script>
-<script src="js/viz.js?v=7"></script>
-<script src="js/map.js?v=7"></script>
-<script src="js/loop.js?v=7"></script>
-<script src="js/main.js?v=7"></script>
+<script src="js/comfort.js?v=8"></script>
+<script src="js/sim.js?v=8"></script>
+<script src="js/data.js?v=8"></script>
+<script src="js/nn.js?v=8"></script>
+<script src="js/viz.js?v=8"></script>
+<script src="js/map.js?v=8"></script>
+<script src="js/loop.js?v=8"></script>
+<script src="js/main.js?v=8"></script>
 </body>
 </html>

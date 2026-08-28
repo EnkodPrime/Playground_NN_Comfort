@@ -84,6 +84,7 @@ function regenData() {
 
 function renderCounts() {
   const c = classCounts(train);
+  $('countRow').title = 'How many votes of each kind ended up in the training set.';
   $('countRow').innerHTML = CLASSES.map((cl, i) =>
     '<span><span class="cchip" style="background:' + cl.color + '"></span>' + c[i] + '</span>'
   ).join('') + '<span>Σ ' + train.n + ' train · ' + test.n + ' test</span>';
@@ -464,6 +465,7 @@ function buildFeatureList() {
   FEATURES.forEach((f) => {
     const row = document.createElement('label');
     row.className = 'featrow' + (state.features[f.id] ? '' : ' off');
+    row.title = f.tip;
     row.innerHTML = '<input type="checkbox"' + (state.features[f.id] ? ' checked' : '') + '>' +
       '<span class="nm">' + f.name + (f.unit ? ' <span style="color:#98a2ad">[' + f.unit + ']</span>' : '') + '</span>' +
       '<span class="enc">' + (f.cyc ? 'sin+cos' : '1×') + '</span>';
@@ -495,7 +497,7 @@ function buildProbeSliders() {
     const row = document.createElement('div');
     row.className = 'proberow';
     row.id = 'probe_' + f.id;
-    row.innerHTML = '<span class="nm" title="' + f.name + '">' + f.name + '</span>' +
+    row.innerHTML = '<span class="nm" title="' + f.tip + '">' + f.name + '</span>' +
       '<input type="range" min="' + f.min + '" max="' + f.max + '" step="' + f.step + '" value="' + state.probe[f.id] + '">' +
       '<b>' + fmtFeat(f, state.probe[f.id]) + '</b>';
     const inp = row.querySelector('input');
@@ -538,6 +540,8 @@ function buildLayerControls() {
   state.hidden.forEach((units, li) => {
     const card = document.createElement('div');
     card.className = 'laycard';
+    card.title = 'Units in this hidden layer. Each unit is one small learned detector; '
+      + 'more units can carve a finer comfort boundary but need more data.';
     card.dataset.layer = li;
     card.innerHTML = '<div class="row"><button data-a="m">−</button><b>' + units +
       ' unit' + (units > 1 ? 's' : '') + '</b><button data-a="p">+</button></div>';

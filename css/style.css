@@ -278,6 +278,16 @@ table.mtab tr:hover td{background:#f7fbff}
 .classline{display:flex;align-items:center;gap:6px}
 .chip{width:8px;height:8px;border-radius:2px;display:inline-block}
 
+/* ------------------------------------------------------- hover hints */
+/* anything carrying an explanation gets a dotted underline as the cue */
+.ctl[title]>span, .slider span[title], .check[title], .metrics div[title] .lbl,
+h3[title], .epochbox[title] .lbl, .layerbtns[title] #layerLbl, .params[title],
+.featrow[title] .nm, .proberow .nm[title]{
+  cursor:help;
+  text-decoration:underline dotted #b3bfc9;
+  text-underline-offset:3px;
+}
+
 /* -------------------------------------------------------------- notes */
 .notes{
   margin:6px 20px 28px;padding:14px 18px;background:var(--panel);
