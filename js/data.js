@@ -96,6 +96,30 @@ function flatWindow(s, ids) {
   return out;
 }
 
+/** Channel range [start, end) of one feature inside the encoded window. */
+function channelRange(ids, id) {
+  let off = 0;
+  for (const i of ids) {
+    const w = featWidth(FEATURES[FEAT_INDEX[i]]);
+    if (i === id) return [off, off + w];
+    off += w;
+  }
+  return null;
+}
+
+/**
+ * A copy of the window with one feature's channels zeroed — how a dead sensor
+ * arrives at the network. Encoded zero is the standardised mean, so the model
+ * sees "an average value with no information in it".
+ */
+function zeroFeatureChannels(win, ids, id) {
+  const r = channelRange(ids, id);
+  if (!r) return win;
+  const w = win.slice();
+  for (let c = r[0]; c < r[1]; c++) w.fill(0, c * WIN_T, (c + 1) * WIN_T);
+  return w;
+}
+
 /** Packs a list of per-step encoded vectors (oldest first) into a window. */
 function packWindow(cols, C) {
   const out = new Float32Array(C * WIN_T);

@@ -283,6 +283,8 @@ function loopStatusHtml(opt) {
       (loop.empty ? ' <span style="color:#7b8794">(−1.5° setback, empty)</span>' : '')
     : '<span class="bad">no credible zone in reach — train the network (or it is genuinely too hot: a heater cannot cool)</span>';
   const agree = loop.noVote ? ' · votes matched <b>' + Math.round(100 * loop.agreeVote / loop.noVote) + '%</b>' : '';
+  const dead = loop.failName
+    ? ' · <span class="bad">' + loop.failName + ' sensor failed — its channels arrive zeroed</span>' : '';
   const broken = e.probs && !isFinite(e.probs[0])
     ? ' · <span class="bad">network output is NaN — training diverged, press ⟳ to reset the weights</span>' : '';
   return 'Day ' + s.doy + ' (' + M[s.dow] + ') <b>' + hh + ':' + mm + '</b> · ' + who +
@@ -291,5 +293,5 @@ function loopStatusHtml(opt) {
     (s.window ? ' · <span class="bad">window open</span>' : '') +
     (s.guests ? ' · ' + s.guests + ' guests' : '') +
     ' · true PMV <b>' + (e.pmv >= 0 ? '+' : '−') + Math.abs(e.pmv).toFixed(2) + '</b>' +
-    (loop.mode === 'nn' ? ' · learned zone: ' + band : '') + agree + broken;
+    (loop.mode === 'nn' ? ' · learned zone: ' + band : '') + dead + agree + broken;
 }

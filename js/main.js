@@ -9,6 +9,8 @@ const state = {
   cell: 'gru',         // rnn | gru | lstm
   readout: 'mean',     // RNN readout: mean | last | max
   head: 'gap',       // CNN output head: gap | gmp | flat
+  sensorDropout: false,  // training augmentation: randomly blind one channel
+  failSensor: '',    // live loop: this sensor's channels arrive zeroed
   activation: 'relu',
   lr: 0.003,
   l2: 0,
@@ -70,6 +72,12 @@ function activeIds() { return FEATURES.map((f) => f.id).filter((id) => state.fea
 /** Both architectures read the multi-channel window of the last hour. */
 function dataX(ds) { return ds.ws; }
 function encProbe(s) { return flatWindow(s, activeIds()); }
+/** The live loop's encoder — with a simulated dead sensor when one is chosen. */
+function encLive(s) {
+  const ids = activeIds();
+  const w = flatWindow(s, ids);
+  return state.failSensor ? zeroFeatureChannels(w, ids, state.failSensor) : w;
+}
 function featX() { return FEATURES[FEAT_INDEX[state.mapX]]; }
 function featY() { return FEATURES[FEAT_INDEX[state.mapY]]; }
 
@@ -179,7 +187,23 @@ function trainOneBatch() {
   const B = state.batch;
   const idx = new Array(B);
   for (let i = 0; i < B; i++) idx[i] = Math.floor(Math.random() * train.n);
-  model.trainBatch(dataX(train), train.ys, idx, state.lr, state.l2);
+  if (!state.sensorDropout) {
+    model.trainBatch(dataX(train), train.ys, idx, state.lr, state.l2);
+  } else {
+    // sensor dropout: ~a third of the examples lose one random channel, so the
+    // network learns to answer from any subset — a dead sensor later degrades
+    // the thermostat gracefully instead of breaking it
+    const ids = activeIds();
+    const X = dataX(train);
+    const xs = [], ys = [];
+    for (const i of idx) {
+      xs.push(Math.random() < 0.35
+        ? zeroFeatureChannels(X[i], ids, ids[randInt(0, ids.length)])
+        : X[i]);
+      ys.push(train.ys[i]);
+    }
+    model.trainBatch(xs, ys, xs.map((_, k) => k), state.lr, state.l2);
+  }
   state.epoch += B / train.n;
 }
 
@@ -272,7 +296,8 @@ function mainLoop() {
 }
 
 function loopOpt() {
-  return { pref: state.pref, sigma: state.sigma, onVote: onLiveVote, enc: encProbe };
+  loop.failName = state.failSensor ? FEATURES[FEAT_INDEX[state.failSensor]].name : '';
+  return { pref: state.pref, sigma: state.sigma, onVote: onLiveVote, enc: encLive };
 }
 
 /** Online learning: a live vote becomes a training example on the spot. */
@@ -1168,6 +1193,8 @@ function bindUI() {
     renderLoop();
   };
   $('learnVotes').onchange = (e) => { loop.learn = e.target.checked; };
+  $('sensorDrop').onchange = (e) => { state.sensorDropout = e.target.checked; };
+  $('failSensor').onchange = (e) => { state.failSensor = e.target.value; if (loop.hist.length) renderLoop(); };
 
   window.addEventListener('resize', () => {
     mapDrawDirty = true;
@@ -1177,7 +1204,18 @@ function bindUI() {
 }
 
 /* -------------------------------------------------------------- init */
+function buildFailSelect() {
+  const sel = $('failSensor');
+  sel.innerHTML = '<option value="">none — all sensors fine</option>';
+  FEATURES.forEach((f) => {
+    const o = document.createElement('option');
+    o.value = f.id; o.textContent = f.name;
+    sel.appendChild(o);
+  });
+}
+
 function init() {
+  buildFailSelect();
   document.body.classList.add('arch-' + state.arch);
   $('archCnn').classList.toggle('on', state.arch === 'cnn');
   $('archRnn').classList.toggle('on', state.arch === 'rnn');

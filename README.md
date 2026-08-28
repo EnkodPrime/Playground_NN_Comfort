@@ -133,6 +133,12 @@ temperature × draught — with three things on it:
 Learning has worked when the colours fill the dotted outline. Drag the probe sliders and both the
 learned and the true zone move together — or apart, where the network is extrapolating.
 
+**Sensor dropout.** A toolbar switch trains with about a third of the examples missing one
+random channel, so the network learns to answer from any sensor subset — and *Fail a sensor* in
+the live loop delivers a chosen channel as zeros while the room's physics stays real. Together
+they are the missing-sensor story of real hardware: a normally trained network stumbles when a
+sensor dies; a dropout-trained one degrades gracefully, at almost no cost while everything works.
+
 ## The control loop
 
 Press ▶ on the live loop and the trained network is put in charge of the heater:
