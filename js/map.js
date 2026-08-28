@@ -36,15 +36,17 @@ function mapEvalNet(model, ids, probe, fx, fy) {
   return { cls, p };
 }
 
-/** The true vote over the plane — same slice through the PMV model. */
-function mapEvalTruth(probe, fx, fy, pref) {
+/** The true vote over the plane — same slice through the PMV model. In
+ * uniform (controlled-study) mode `fill` replaces the unseen sensors with the
+ * study's typical household, so the outline matches the generated votes. */
+function mapEvalTruth(probe, fx, fy, pref, fill) {
   const cls = new Uint8Array(TRUTH_GX * TRUTH_GY);
   const s = Object.assign({}, probe);
   for (let gy = 0; gy < TRUTH_GY; gy++) {
     s[fy.id] = axisValue(fy, gy / (TRUTH_GY - 1));
     for (let gx = 0; gx < TRUTH_GX; gx++) {
       s[fx.id] = axisValue(fx, gx / (TRUTH_GX - 1));
-      cls[gy * TRUTH_GX + gx] = comfortTruth(s, pref).label;
+      cls[gy * TRUTH_GX + gx] = comfortTruth(fill ? fill(s) : s, pref).label;
     }
   }
   return cls;

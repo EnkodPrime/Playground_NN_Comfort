@@ -53,6 +53,7 @@ function dataOpt() {
   return {
     coverage: state.coverage, pref: state.pref, sigma: state.sigma,
     sensorNoise: state.sensorNoise, balance: state.balance,
+    pin: Object.assign({}, state.probe),
     insulation: +$('insul').value, pmax: +$('pmax').value, heater: $('heaterType').value,
   };
 }
@@ -320,7 +321,10 @@ function renderMapMaybe() {
     mapNetDirty = false; changed = true;
   }
   if (mapTruthDirty && slow) {
-    mapTruth = state.showTruth ? mapEvalTruth(state.probe, featX(), featY(), state.pref) : null;
+    const fill = state.voteSource === 'uniform'
+      ? (s) => typicalFill(s, activeIds().concat([state.mapX, state.mapY]))
+      : null;
+    mapTruth = state.showTruth ? mapEvalTruth(state.probe, featX(), featY(), state.pref, fill) : null;
     mapTruthDirty = false; changed = true;
   }
   if (sliceVotesDirty && slow) {
@@ -403,6 +407,21 @@ function fmtFeat(f, v) {
 }
 
 /* -------------------------------------------------------- quick test */
+/** A fresh moment drawn from the SAME world the training votes came from:
+ * household-plausible in simulation mode, the controlled study's sweep in
+ * uniform mode. Testing on a different world would measure the wrong thing. */
+function quickState(ids) {
+  if (state.voteSource !== 'uniform') return randomState(state.coverage);
+  const s = Object.assign({}, state.probe);
+  ids.forEach((id) => {
+    const f = FEATURES[FEAT_INDEX[id]];
+    if (id === 'hour') s.hour = rand(0, 24);
+    else if (id === 'doy') s.doy = pickDoy(state.coverage);
+    else s[id] = rand(f.min, f.max);
+  });
+  return typicalFill(s, ids);
+}
+
 /**
  * Scores the network against the NOISELESS comfort model on fresh random
  * moments — the honest question: did it find the zone, not the noise?
@@ -414,7 +433,7 @@ function quickTest() {
   const per = [[0, 0], [0, 0], [0, 0]];        // [correct, total] per true class
   let tp = 0, fp = 0, fn = 0;
   for (let i = 0; i < N; i++) {
-    const s = randomState(state.coverage);
+    const s = quickState(ids);
     const y = comfortTruth(s, state.pref).label;
     const a = argmax(model.forward(encodeState(s, ids), false));
     per[y][1]++;

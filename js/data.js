@@ -171,29 +171,38 @@ function finishDataset(xs, ys, states, pmvs, balance) {
 }
 
 /**
- * The other way to get labels: no household, no exploration, no behaviour.
- * Moments are drawn EVENLY across the whole sensor space and labelled straight
- * from the comfort theory (PMV, ISO 7730) — what a lab study would produce.
- * Coverage is perfect and uniform; the price is that many sampled moments are
- * ones no lived-in home ever visits, and the occupants inferred from them
- * (asleep at noon, a draught in a closed winter room) follow the sensors, not
- * a routine.
+ * The other way to get labels: a CONTROLLED STUDY instead of a lived-in home.
+ * Only the sensors the network can actually see are swept — evenly across
+ * their whole range, so coverage over those dimensions is uniform by
+ * construction. Everything the network cannot see follows one typical
+ * household instead of being randomised: the occupants sleep at night (with
+ * day-to-day jitter), walls sit just below the air, humidity and weather take
+ * physically ordinary values, and switched-off time inputs are pinned at the
+ * probe sliders. Varying what the model sees while holding the rest typical
+ * is what keeps the hidden dimensions from smearing the labels into noise.
  */
 function makeUniformDataset(n, ids, opt) {
   const xs = [], ys = [], states = [], pmvs = [];
+  const active = {};
+  ids.forEach((id) => (active[id] = true));
   const F = {};
   FEATURES.forEach((f) => (F[f.id] = f));
+  const pin = opt.pin || {};
   const k = opt.sensorNoise || 0;
   for (let i = 0; i < n; i++) {
+    const doy = active.doy ? pickDoy(opt.coverage) : Math.round(pin.doy || 20);
+    const hour = active.hour ? rand(0, 24) : (pin.hour != null ? pin.hour : 12);
+    // the typical household behind the sensors the network cannot see
+    const wake = 6.75 + rand(-0.5, 0.9), bed = 22.75 + rand(-0.6, 0.9);
+    const asleep = hour >= bed || hour < wake;
+    const ta = active.ta ? rand(F.ta.min, F.ta.max) : (pin.ta != null ? pin.ta : 21);
     const s = {
-      ta: rand(F.ta.min, F.ta.max),
-      rh: rand(F.rh.min, F.rh.max),
-      tw: rand(F.tw.min, F.tw.max),
-      tout: rand(F.tout.min, F.tout.max),
-      hour: rand(0, 24),
-      doy: pickDoy(opt.coverage),
-      mov: rand(0, 1),
-      vair: rand(0, 1),
+      ta, hour, doy,
+      mov: active.mov ? rand(0, 1) : (asleep ? rand(0.01, 0.06) : rand(0.25, 0.5)),
+      vair: active.vair ? rand(0, 1) : 0.04 + rand(0, 0.05),
+      tout: active.tout ? rand(F.tout.min, F.tout.max) : outdoorTemp(doy, hour, 2.5 * randn()),
+      tw: active.tw ? rand(F.tw.min, F.tw.max) : ta - rand(0.3, 1.4),
+      rh: active.rh ? rand(F.rh.min, F.rh.max) : clamp(48 - 0.8 * (ta - 21) + 4 * randn(), 25, 70),
     };
     // the sensors report the moment imperfectly, same as in the simulation
     const m = {
@@ -212,6 +221,25 @@ function makeUniformDataset(n, ids, opt) {
     pmvs.push(v.pmv);
   }
   return finishDataset(xs, ys, states, pmvs, opt.balance);
+}
+
+/**
+ * The deterministic centre of that typical household — the comfort map draws
+ * its true zone through this in uniform mode, so the dotted outline agrees
+ * with the votes it generated. `keep` lists ids that must not be overwritten
+ * (the active inputs plus the map axes).
+ */
+function typicalFill(s, keep) {
+  const a = {};
+  keep.forEach((id) => (a[id] = true));
+  const out = Object.assign({}, s);
+  const asleep = out.hour >= 22.75 || out.hour < 6.75;
+  if (!a.mov) out.mov = asleep ? 0.03 : 0.35;
+  if (!a.vair) out.vair = 0.06;
+  if (!a.tout) out.tout = outdoorTemp(out.doy, out.hour, 0);
+  if (!a.tw) out.tw = out.ta - 0.85;
+  if (!a.rh) out.rh = clamp(48 - 0.8 * (out.ta - 21), 25, 70);
+  return out;
 }
 
 /** Class counts of a dataset, for the data panel. */
