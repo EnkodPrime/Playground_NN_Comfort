@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NN Comfort Playground — learning a home's comfort zone</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%232f3f4f%22/><text x=%2250%22 y=%2274%22 font-size=%2264%22 text-anchor=%22middle%22 fill=%22%23ffca7a%22>⌂</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=17">
+<link rel="stylesheet" href="css/style.css?v=18">
 </head>
 <body>
 
@@ -13,15 +13,15 @@
   <div class="brand">
     <span class="logo">⌂</span>
     <div>
-      <h1>NN Comfort Playground <span class="ver">v17 · 2026-08-27</span></h1>
+      <h1>NN Comfort Playground <span class="ver">v18 · 2026-08-27</span></h1>
       <p>A network learns the comfort zone from votes, then runs the heating — in the browser, no libraries</p>
     </div>
   </div>
   <nav class="archsw" role="tablist">
-    <button id="archMlp" class="on" role="tab"
-      title="A fully connected network on ONE moment: the current sensor readings. It cannot know what happened ten minutes ago.">Dense · snapshot</button>
-    <button id="archCnn" role="tab"
+    <button id="archCnn" class="on" role="tab"
       title="A 1D convolutional network over the last hour of every sensor channel — the architecture of the sibling signal playground, given several inputs. Its filters slide along time and read rises, falls and recent activity.">1D CNN · last hour</button>
+    <button id="archRnn" role="tab"
+      title="A recurrent network walking through the same hour step by step — simple tanh RNN, GRU or LSTM cells, trained by backpropagation through time with gradient clipping. Instead of sliding patterns it carries a state: a little memory updated at every minute.">RNN · last hour</button>
   </nav>
   <div class="epochbox" title="Training is counted in epochs: one epoch means the network has worked through every example in the training set once.">
     <span class="lbl">Epoch</span>
@@ -53,12 +53,30 @@
     </select>
   </label>
 
-  <label class="ctl" title="The bend applied inside every unit. Without a nonlinear function the whole network would collapse into one straight line and could only draw straight boundaries."><span>Activation</span>
+  <label class="ctl cnnonly" title="The bend applied inside every unit. Without a nonlinear function the whole network would collapse into one straight line and could only draw straight boundaries."><span>Activation</span>
     <select id="act">
       <option value="relu" selected>ReLU</option>
       <option value="tanh">Tanh</option>
       <option value="leaky">Leaky ReLU</option>
       <option value="sigmoid">Sigmoid</option>
+    </select>
+  </label>
+
+  <label class="ctl rnnonly" title="The recurrent cell. The simple tanh RNN struggles to remember across many steps (vanishing gradients); GRU and LSTM add gates that decide what to keep and what to forget.">
+    <span>Cell</span>
+    <select id="cell">
+      <option value="gru" selected>GRU</option>
+      <option value="lstm">LSTM</option>
+      <option value="rnn">Simple RNN (tanh)</option>
+    </select>
+  </label>
+
+  <label class="ctl rnnonly" title="How the sequence of states becomes the numbers the vote sees. Last state: the memory at the end of the hour carries everything. Mean: every minute contributes. Max: the strongest moment per unit.">
+    <span>Readout</span>
+    <select id="readout">
+      <option value="mean" selected>Mean over time</option>
+      <option value="last">Last state</option>
+      <option value="max">Max over time</option>
     </select>
   </label>
 
@@ -183,11 +201,10 @@
       <div id="layerControls" class="layerctl"></div>
       <canvas id="net"></canvas>
     </div>
-    <p class="hint mlponly">Each box shows that unit's output over the two features chosen as the map axes —
-      all other sensors held at the probe values. <span class="sw pos"></span> positive,
-      <span class="sw neg"></span> negative; link thickness is weight magnitude. The small circle is
-      where the probe sits. <b>Click</b> a node for the full arithmetic below, click an input's name
-      in the Data panel to remove it and see what the network can no longer learn.</p>
+    <p class="hint rnnonly">Each box is one recurrent unit — inside it is its state h(t) across the
+      window, the little memory the cell updates minute by minute. Link thickness is the total
+      input weight over all gates. <b>Click</b> a unit to see its gate weights — what it reads from
+      every channel and what it keeps from its own past.</p>
     <p class="hint cnnonly">The input is no longer one moment but the <b>last hour of every sensor
       channel</b>; each filter box shows its output curve over that window for the probe. Link
       thickness is the total kernel weight between a channel and a filter; each filter's
@@ -368,13 +385,14 @@
   </ul>
 </footer>
 
-<script src="js/comfort.js?v=17"></script>
-<script src="js/sim.js?v=17"></script>
-<script src="js/data.js?v=17"></script>
-<script src="js/nn.js?v=17"></script>
-<script src="js/viz.js?v=17"></script>
-<script src="js/map.js?v=17"></script>
-<script src="js/loop.js?v=17"></script>
-<script src="js/main.js?v=17"></script>
+<script src="js/comfort.js?v=18"></script>
+<script src="js/sim.js?v=18"></script>
+<script src="js/data.js?v=18"></script>
+<script src="js/nn.js?v=18"></script>
+<script src="js/rnn.js?v=18"></script>
+<script src="js/viz.js?v=18"></script>
+<script src="js/map.js?v=18"></script>
+<script src="js/loop.js?v=18"></script>
+<script src="js/main.js?v=18"></script>
 </body>
 </html>

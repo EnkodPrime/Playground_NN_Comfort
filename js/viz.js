@@ -103,6 +103,21 @@ function convLinkStrength(conv, co, ci) {
   return sum;
 }
 
+/** Same for a recurrent unit: total input weight over all of its gates. */
+function rnnLinkStrength(dir, u, d) {
+  let sum = 0;
+  for (let g = 0; g < dir.G; g++) sum += Math.abs(dir.px.W[(g * dir.H + u) * dir.D + d]);
+  return sum;
+}
+function rnnLinkSign(dir, u, d) {
+  let big = 0;
+  for (let g = 0; g < dir.G; g++) {
+    const w = dir.px.W[(g * dir.H + u) * dir.D + d];
+    if (Math.abs(w) > Math.abs(big)) big = w;
+  }
+  return big;
+}
+
 /* ------------------------------------------------------------ Layout */
 const IN_W = 44, IN_H = 34, HID_W = 48, HID_H = 44, OUT_W = 52, OUT_H = 44;
 const NODE_VGAP = 11, LABEL_W = 96, OUT_LABEL_W = 96, COL_GAP = 86;
@@ -114,9 +129,9 @@ const NODE_VGAP = 11, LABEL_W = 96, OUT_LABEL_W = 96, COL_GAP = 86;
  */
 function layoutNetwork(model, inNames, cssW) {
   const cols = [];
-  const cnn = model.kind === 'cnn';
-  const nIn = cnn ? model.cfg.channels : model.cfg.inputDim;
-  const hidden = cnn ? model.cfg.layers.map((l) => l.filters) : model.cfg.hidden;
+  const cnn = model.kind === 'cnn' || model.kind === 'rnn';
+  const nIn = model.cfg.channels;
+  const hidden = model.cfg.layers.map((l) => l.filters || l.units);
   const inNodes = [];
   for (let i = 0; i < nIn; i++) inNodes.push({ w: cnn ? 58 : IN_W, h: IN_H, unit: i });
   cols.push({ kind: 'in', nodes: inNodes });
@@ -175,8 +190,9 @@ function drawNetwork(ctx, o) {
   const emph = sel || hov;                          // node whose links stand out
 
   // ------------------------------------------------ links
-  const cnn = model.kind === 'cnn';
-  if (!cnn) {
+  const isConv = model.kind === 'cnn';
+  const cnn = true;                          // both remaining architectures are sequential
+  if (false) {
     const denses = [...model.denses, model.out];
     denses.forEach((d, di) => {
       const from = cols[di], to = cols[di + 1];
@@ -192,28 +208,34 @@ function drawNetwork(ctx, o) {
       }
     });
   } else {
-    // conv links: thickness is the total kernel weight of that channel
-    model.convs.forEach((conv, di) => {
+    // hidden links: thickness is the total input weight of that channel
+    const stagesL = isConv ? model.convs : model.layers;
+    stagesL.forEach((lay, di) => {
       const from = cols[di], to = cols[di + 1];
+      const nOut = isConv ? lay.cout : lay.H;
+      const nInL = isConv ? lay.cin : lay.D;
+      const strength = (co, ci) => isConv ? convLinkStrength(lay, co, ci) : rnnLinkStrength(lay, co, ci);
+      const signOf = (co, ci) => {
+        if (!isConv) return rnnLinkSign(lay, co, ci);
+        let big = 0;
+        const wb = (co * lay.cin + ci) * lay.k;
+        for (let j = 0; j < lay.k; j++) if (Math.abs(lay.W[wb + j]) > Math.abs(big)) big = lay.W[wb + j];
+        return big;
+      };
       let mx = 1e-6;
-      for (let co = 0; co < conv.cout; co++)
-        for (let ci = 0; ci < conv.cin; ci++) mx = Math.max(mx, convLinkStrength(conv, co, ci));
-      for (let co = 0; co < conv.cout; co++) {
-        for (let ci = 0; ci < conv.cin; ci++) {
-          const sum = convLinkStrength(conv, co, ci);
-          const a = sum / mx;
+      for (let co = 0; co < nOut; co++)
+        for (let ci = 0; ci < nInL; ci++) mx = Math.max(mx, strength(co, ci));
+      for (let co = 0; co < nOut; co++) {
+        for (let ci = 0; ci < nInL; ci++) {
+          const a = strength(co, ci) / mx;
           if (a < 0.05) continue;
-          // sign of the largest tap decides the colour
-          let big = 0;
-          const wb = (co * conv.cin + ci) * conv.k;
-          for (let j = 0; j < conv.k; j++) if (Math.abs(conv.W[wb + j]) > Math.abs(big)) big = conv.W[wb + j];
           const hot = emph && ((emphMatches(emph, di, ci, cols)) || (emphMatches(emph, di + 1, co, cols)));
-          drawLink(ctx, from.nodes[ci], to.nodes[co], a, big, hot, !!emph);
+          drawLink(ctx, from.nodes[ci], to.nodes[co], a, signOf(co, ci), hot, !!emph);
         }
       }
     });
     const d = model.out;
-    const di = model.convs.length;
+    const di = stagesL.length;
     const from = cols[di], to = cols[di + 1];
     const F = from.nodes.length;
     const perT = d.nin / F;               // 1 for a pooled head, T for Flatten
@@ -243,8 +265,9 @@ function drawNetwork(ctx, o) {
   label(ctx, cols[0].x, 14, cnn
     ? 'Channels · last ' + Math.round(o.winT * 2) + ' min'
     : 'Sensors (' + model.cfg.inputDim + ' inputs)');
+  const hidName = isConv ? 'Conv ' : (model.cfg.cell || 'RNN').toUpperCase() + ' ';
   cols.forEach((col) => {
-    if (col.kind === 'hid') label(ctx, col.x - 6, 14, (cnn ? 'Conv ' : 'Hidden ') + (col.layer + 1));
+    if (col.kind === 'hid') label(ctx, col.x - 6, 14, hidName + (col.layer + 1));
   });
   label(ctx, cols[cols.length - 1].x - 4, 14, 'Vote');
 

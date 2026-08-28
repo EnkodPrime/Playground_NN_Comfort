@@ -92,26 +92,28 @@ overheating across the whole year. The collector is curious about what it lacks:
 
 ## The networks
 
-Two architectures share the data, the map and the control loop, switchable at the top of the page:
+Two architectures share the data, the map and the control loop, switchable at the top of the
+page — both read the same input: the last ~64 minutes of every sensor as a multi-channel window.
 
-* **Dense · snapshot** — a fully connected MLP on one moment's sensor readings. 1–4 hidden
-  layers of 1–10 units; the default 2×6 network has 129 parameters.
 * **1D CNN · last hour** — the convolutional architecture of the sibling signal playground,
-  given several input channels: every vote carries the last ~64 minutes of every sensor as a
-  multi-channel window, and 1–3 layers of sliding kernels read rises, falls and recent activity.
-  The output head is selectable, as in the sibling project: Global Average Pool (each filter's
-  verdict over the whole hour), Global Max Pool (its loudest moment) or Flatten (the vote sees
-  every position — the only head that knows *when* something happened).
+  given several input channels: 1–3 layers of sliding kernels read rises, falls and recent
+  activity. The output head is selectable, as in the sibling project: Global Average Pool (each
+  filter's verdict over the whole hour), Global Max Pool (its loudest moment) or Flatten (the
+  vote sees every position — the only head that knows *when* something happened).
+* **RNN · last hour** — a recurrence walking through the same hour step by step: simple tanh
+  RNN, GRU or LSTM cells (1–2 layers of 1–10 units), trained by backpropagation through time
+  with global gradient-norm clipping, read out by the last state, the mean or the max over time.
+  Instead of sliding patterns it carries a state — a little memory updated every minute.
 
-The distinction is not cosmetic, because comfort has **memory**: the generating model gives the
+Architectures matter here because comfort has **memory**: the generating model gives the
 body a ~20-minute metabolic inertia (what counts is the activity of the last quarter hour, not
 this second), and the datasets contain moments where someone just sat down or the room is
 mid-warm-up. A snapshot network cannot represent those — the window network can, and wins
 exactly there.
 
-Everything is written from scratch in `js/nn.js` — dense and 1D convolutional layers, forward,
-backprop, Adam, softmax and cross-entropy over plain `Float32Array`s, gradients verified against
-numeric differences.
+Everything is written from scratch in `js/nn.js` and `js/rnn.js` — dense, 1D convolutional and
+recurrent layers, forward, backprop/BPTT, Adam, softmax and cross-entropy over plain
+`Float32Array`s; every gradient, gates included, verified against numeric differences.
 
 Every node in the diagram is drawn the TensorFlow-Playground way: its response over the two
 features chosen as the comfort-map axes, all other sensors pinned at the probe. Clicking a node
@@ -170,9 +172,10 @@ core of the zone, which is the point of learning from many votes.
 | `js/comfort.js` | PMV/PPD after ISO 7730, clothing & metabolism from the routine, the vote model |
 | `js/sim.js` | weather, the RC building, moisture, occupancy, heaters |
 | `js/data.js` | sensor encoding, curious exploration, dataset collection and balancing |
-| `js/nn.js` | the MLP: forward, backprop, Adam, evaluation |
+| `js/nn.js` | dense + 1D convolutional layers: forward, backprop, Adam, evaluation |
 | `js/viz.js` | the network diagram with response-map nodes, loss and confusion charts |
 | `js/map.js` | the comfort map: learned regions, true outline, votes near the slice |
+| `js/rnn.js` | RNN / GRU / LSTM cells over the window, BPTT, gradient clipping, readouts |
 | `js/loop.js` | the closed loop: zone scan, T\*, PI control, charts |
 | `js/main.js` | state, UI, training loop, probe, arithmetic panel |
 

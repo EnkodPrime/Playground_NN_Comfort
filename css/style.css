@@ -45,8 +45,8 @@ h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute
 }
 .archsw button:hover{color:#fff}
 .archsw button.on{background:#fff;color:#2f3f4f}
-body.arch-mlp .cnnonly{display:none !important}
-body.arch-cnn .mlponly{display:none !important}
+body.arch-cnn .rnnonly{display:none !important}
+body.arch-rnn .cnnonly{display:none !important}
 .epochbox{text-align:right}
 .epochbox .lbl{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#9fb0be}
 .epochbox .val{font:600 20px ui-monospace,Consolas,monospace}
