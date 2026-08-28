@@ -7,8 +7,16 @@
  * near this slice. Learning worked when the colours fill the dotted outline.
  */
 
-const MAP_GX = 108, MAP_GY = 80;    // network evaluation grid
+const MAP_GX = 132, MAP_GY = 96;    // network evaluation grid
 const TRUTH_GX = 108, TRUTH_GY = 80;
+
+/* Parsed class colours, for building the map image pixel by pixel. */
+const _CLS_RGB = CLASSES.map((c) => [
+  parseInt(c.color.slice(1, 3), 16),
+  parseInt(c.color.slice(3, 5), 16),
+  parseInt(c.color.slice(5, 7), 16),
+]);
+let _mapOff = null;                 // offscreen canvas holding the raw grid
 
 /** Fraction 0..1 → raw feature value across its plot range. */
 function axisValue(f, t) { return f.min + t * (f.max - f.min); }
@@ -62,17 +70,36 @@ function drawComfortMap(ctx, w, h, o) {
   const pw = w - padL - padR, ph = h - padT - padB;
   ctx.clearRect(0, 0, w, h);
 
-  // network regions
+  // network regions — drawn into a small image and scaled up with the
+  // browser's bilinear smoothing, so the boundary reads as a surface rather
+  // than a mosaic of grid cells
   if (net) {
-    const cw = pw / MAP_GX, ch = ph / MAP_GY;
+    if (!_mapOff) {
+      _mapOff = document.createElement('canvas');
+      _mapOff.width = MAP_GX; _mapOff.height = MAP_GY;
+    }
+    const octx = _mapOff.getContext('2d');
+    const img = octx.createImageData(MAP_GX, MAP_GY);
     for (let gy = 0; gy < MAP_GY; gy++) {
+      const row = (MAP_GY - 1 - gy) * MAP_GX;       // grid row 0 is the bottom
       for (let gx = 0; gx < MAP_GX; gx++) {
         const i = gy * MAP_GX + gx;
         const conf = (net.p[i] - 1 / 3) / (2 / 3);
-        ctx.fillStyle = probColor(0.10 + 0.72 * conf, CLASSES[net.cls[i]].color);
-        ctx.fillRect(padL + gx * cw, padT + (MAP_GY - 1 - gy) * ch, cw + 0.5, ch + 0.5);
+        const t = 0.10 + 0.72 * Math.max(0, Math.min(1, conf));
+        const c = _CLS_RGB[net.cls[i]];
+        const o = (row + gx) * 4;
+        img.data[o] = 255 + (c[0] - 255) * t;
+        img.data[o + 1] = 255 + (c[1] - 255) * t;
+        img.data[o + 2] = 255 + (c[2] - 255) * t;
+        img.data[o + 3] = 255;
       }
     }
+    octx.putImageData(img, 0, 0);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(_mapOff, padL, padT, pw, ph);
+    ctx.restore();
   } else {
     ctx.fillStyle = '#f7f9fb';
     ctx.fillRect(padL, padT, pw, ph);
