@@ -143,6 +143,7 @@ function loopTick(model, ids, opt) {
 }
 
 /* ----------------------------------------------------------- drawing */
+function finite(v) { return typeof v === 'number' && isFinite(v); }
 
 /** Temperatures, the learned comfort band, T* and the votes. */
 function drawLoopTemps(ctx, w, h) {
@@ -155,9 +156,11 @@ function drawLoopTemps(ctx, w, h) {
   }
   let lo = 10, hi = 25;
   for (const e of H) {
+    if (!finite(e.ta) || !finite(e.tout)) continue;   // a bad entry must not blank the chart
     lo = Math.min(lo, e.tout - 1, e.ta - 1);
-    hi = Math.max(hi, e.ta + 1, e.tout + 1, (e.hi || 0) + 1);
+    hi = Math.max(hi, e.ta + 1, e.tout + 1, (finite(e.hi) ? e.hi : 0) + 1);
   }
+  if (!finite(lo) || !finite(hi) || hi - lo < 1) { lo = 10; hi = 25; }
   const X = (i) => (i * (w - 1)) / (LOOP_VIEW - 1);
   const Y = (t) => h - 12 - ((t - lo) / (hi - lo)) * (h - 20);
 
@@ -175,6 +178,7 @@ function drawLoopTemps(ctx, w, h) {
   let runStart = -1;
   const closeRun = (end) => {
     if (runStart < 0) return;
+    for (let i = runStart; i < end; i++) if (!finite(H[i].lo) || !finite(H[i].hi)) { runStart = -1; return; }
     ctx.beginPath();
     for (let i = runStart; i < end; i++) ctx.lineTo(X(i), Y(H[i].hi));
     for (let i = end - 1; i >= runStart; i--) ctx.lineTo(X(i), Y(H[i].lo));
@@ -193,7 +197,7 @@ function drawLoopTemps(ctx, w, h) {
     let started = false;
     for (let i = 0; i < H.length; i++) {
       const v = get(H[i]);
-      if (v === null) { started = false; continue; }
+      if (!finite(v)) { started = false; continue; }
       if (!started) { ctx.moveTo(X(i), Y(v)); started = true; }
       else ctx.lineTo(X(i), Y(v));
     }
@@ -236,6 +240,7 @@ function drawLoopRibbon(ctx, w, h) {
     let y = 0;
     for (let j = 0; j < 3; j++) {
       const hh = e.probs[j] * barH;
+      if (!finite(hh)) continue;
       ctx.fillStyle = CLASSES[j].color;
       ctx.globalAlpha = e.occ > 0 ? 0.85 : 0.3;        // dim when nobody is home
       ctx.fillRect(x, y, Math.ceil(cw), hh);
@@ -254,7 +259,7 @@ function drawLoopRibbon(ctx, w, h) {
   // heater power as a line over the ribbon
   ctx.beginPath();
   for (let i = 0; i < H.length; i++) {
-    const y = (1 - H[i].u) * (barH - 2) + 1;
+    const y = finite(H[i].u) ? (1 - H[i].u) * (barH - 2) + 1 : barH - 1;
     if (i === 0) ctx.moveTo(i * cw, y); else ctx.lineTo(i * cw, y);
   }
   ctx.strokeStyle = 'rgba(20,30,40,0.85)';
@@ -278,11 +283,13 @@ function loopStatusHtml(opt) {
       (loop.empty ? ' <span style="color:#7b8794">(−1.5° setback, empty)</span>' : '')
     : '<span class="bad">no credible zone in reach — train the network (or it is genuinely too hot: a heater cannot cool)</span>';
   const agree = loop.noVote ? ' · votes matched <b>' + Math.round(100 * loop.agreeVote / loop.noVote) + '%</b>' : '';
+  const broken = e.probs && !isFinite(e.probs[0])
+    ? ' · <span class="bad">network output is NaN — training diverged, press ⟳ to reset the weights</span>' : '';
   return 'Day ' + s.doy + ' (' + M[s.dow] + ') <b>' + hh + ':' + mm + '</b> · ' + who +
     ' · T room <b>' + s.ta.toFixed(1) + '°</b> · walls <b>' + s.tw.toFixed(1) + '°</b> · outside <b>' + s.tout.toFixed(1) + '°</b>' +
     ' · RH <b>' + Math.round(s.rh) + '%</b> · heater <b>' + Math.round(s.power) + ' W</b>' +
     (s.window ? ' · <span class="bad">window open</span>' : '') +
     (s.guests ? ' · ' + s.guests + ' guests' : '') +
     ' · true PMV <b>' + (e.pmv >= 0 ? '+' : '−') + Math.abs(e.pmv).toFixed(2) + '</b>' +
-    (loop.mode === 'nn' ? ' · learned zone: ' + band : '') + agree;
+    (loop.mode === 'nn' ? ' · learned zone: ' + band : '') + agree + broken;
 }

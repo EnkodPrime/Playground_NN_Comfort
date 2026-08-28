@@ -558,10 +558,21 @@ function quickTest() {
 /* --------------------------------------------------------- live loop */
 function renderLoop() {
   $('loopStatus').innerHTML = loopStatusHtml(loopOpt());
-  const t = $('tchart');
-  drawLoopTemps(dpiSetup(t, t.clientWidth, 170), t.clientWidth, 170);
-  const r = $('lribbon');
-  drawLoopRibbon(dpiSetup(r, r.clientWidth, 84), r.clientWidth, 84);
+  const draw = (id, h, fn) => {
+    const c = $(id);
+    const ctx = dpiSetup(c, c.clientWidth, h);
+    try {
+      fn(ctx, c.clientWidth, h);
+    } catch (err) {
+      // never a silently blank chart: name the problem where it happened
+      ctx.clearRect(0, 0, c.clientWidth, h);
+      ctx.fillStyle = '#b0561d';
+      ctx.font = '11px system-ui,sans-serif';
+      ctx.fillText('chart error: ' + err.message, 8, 18);
+    }
+  };
+  draw('tchart', 170, drawLoopTemps);
+  draw('lribbon', 84, drawLoopRibbon);
 }
 
 function setLoop(on) {
