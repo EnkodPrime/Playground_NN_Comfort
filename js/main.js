@@ -92,7 +92,8 @@ function dataOpt() {
 function houseCfg() {
   return {
     doy: +$('startMonth').value, insulation: +$('insul').value,
-    pmax: +$('pmax').value, heater: $('heaterType').value, residents: 2,
+    pmax: +$('pmax').value, coolMax: +$('coolMax').value,
+    heater: $('heaterType').value, residents: 2,
   };
 }
 
@@ -1174,6 +1175,8 @@ function bindUI() {
   man.oninput = () => { loop.manual = +man.value; $('manualVal').textContent = Math.round(loop.manual * 100) + '%'; };
   $('heaterType').onchange = (e) => { if (loop.sim) loop.sim.cfg.heater = e.target.value; };
   $('pmax').onchange = (e) => { if (loop.sim) loop.sim.cfg.pmax = +e.target.value; };
+  $('coolMax').onchange = (e) => { if (loop.sim) loop.sim.cfg.coolMax = +e.target.value; };
+  $('output').onchange = (e) => { loop.output = e.target.value; };
   const insul = $('insul');
   insul.oninput = () => {
     $('insulVal').textContent = insul.value;

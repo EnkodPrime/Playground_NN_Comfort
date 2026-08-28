@@ -18,6 +18,11 @@ const HOUSE = {
   appliances: 60,      // lights & devices when someone is up [W]
 };
 
+/* A cooler is a different machine from a heater: a fan coil reacts in a couple
+ * of minutes, blows all of its effect straight into the air (no radiant share),
+ * stirs the room, and condenses moisture out of it. */
+const COOLER = { tau: 2, stirs: true, dryGramsPerKWmin: 4 };
+
 /* Heater types differ in inertia and in how much of the heat goes to the walls
  * (radiant fraction) rather than straight into the air. */
 const HEATERS = {
@@ -48,7 +53,7 @@ function simInit(cfg) {
   const tout = outdoorTemp(doy, 0, front);
   const ta = rand(18, 22);
   const s = {
-    cfg: Object.assign({ insulation: 80, pmax: 2000, heater: 'radiator', residents: 2 }, cfg),
+    cfg: Object.assign({ insulation: 80, pmax: 2000, coolMax: 0, heater: 'radiator', residents: 2 }, cfg),
     minute: 0,                    // minutes since simulation start
     doy, hour: 0, dow: (doy + 2) % 7,   // day 1 ≈ Wednesday; 5,6 are the weekend
     front,                        // slow weather deviation [K]
@@ -56,6 +61,7 @@ function simInit(cfg) {
     ta, tw: ta - rand(0.5, 1.5),  // walls slightly behind the air
     moist: satMoisture(ta) * 0.45,   // indoor absolute humidity [g/m³]
     power: 0,                     // actual heater output [W] (lags the command)
+    cool: 0,                      // actual cooler output [W] (lags its own way)
     window: false,
     guests: 0, guestUntil: 0,
     shower: 0,                    // minutes of shower moisture left
@@ -102,7 +108,10 @@ function stepOccupancy(s) {
 }
 
 /**
- * Advances the world by one minute with heater command u ∈ [0,1].
+ * Advances the world by one minute with a SIGNED command u ∈ [−1, +1]:
+ * positive is a fraction of heating power, negative a fraction of cooling.
+ * One number, two machines — never both at once, which is exactly what a real
+ * HVAC controller must guarantee.
  * All the physics is explicit Euler at dt = 60 s — every term is a W/K
  * conductance times a temperature difference.
  */
@@ -120,11 +129,14 @@ function simStep(s, u) {
   s.front += (-s.front / (2.5 * 1440)) + 0.10 * randn() / Math.sqrt(1440 / dt * 0.1);
   s.tout = outdoorTemp(s.doy, s.hour, s.front);
 
-  // heater with first-order lag; part radiant (to the wall), rest to the air
+  // heater and cooler, each with its own first-order lag. Part of the heat is
+  // radiant (into the wall); cooling is all air.
   const ht = HEATERS[cfg.heater] || HEATERS.radiator;
-  s.power += (u * cfg.pmax - s.power) * (1 - Math.exp(-1 / ht.tau));
+  const uHeat = Math.max(0, u), uCool = Math.max(0, -u);
+  s.power += (uHeat * cfg.pmax - s.power) * (1 - Math.exp(-1 / ht.tau));
+  s.cool += (uCool * (cfg.coolMax || 0) - s.cool) * (1 - Math.exp(-1 / COOLER.tau));
   const qWall = s.power * ht.radiant;
-  const qAir = s.power - qWall;
+  const qAir = s.power - qWall - s.cool;
 
   // internal gains
   const qPeople = s.occ.n * HOUSE.perPerson;
@@ -147,7 +159,8 @@ function simStep(s, u) {
   if (s.occ.n > 0 && !s.occ.asleep && (morning || evening) && s.shower === 0 && Math.random() < 0.004) {
     s.shower = 15;                                       // someone takes a shower
   }
-  const gen = s.occ.n * HOUSE.moistPerPerson / 60 + (s.shower > 0 ? 40 : 0); // [g/min]
+  const gen = s.occ.n * HOUSE.moistPerPerson / 60 + (s.shower > 0 ? 40 : 0)
+    - COOLER.dryGramsPerKWmin * s.cool / 1000;      // the cooler wrings the air out
   const moistOut = satMoisture(s.tout) * clamp(0.75 - 0.012 * s.front, 0.35, 0.98);
   s.moist += gen / HOUSE.volume - (ach / 60) * (s.moist - moistOut);
   s.moist = Math.max(0.3, s.moist);
@@ -158,7 +171,8 @@ function simStep(s, u) {
     : clamp(s.occ.act * (0.55 + 0.15 * Math.min(s.occ.n, 4)) + 0.04 * randn(), 0, 1);
   s.mov += (movRaw - s.mov) * 0.5;
   s.movEma += (s.mov - s.movEma) / 20;         // ~20-minute metabolic memory
-  const stir = (ht.stirs && s.power > 0.1 * cfg.pmax) ? 0.12 : 0;
+  const stir = ((ht.stirs && s.power > 0.1 * cfg.pmax) ? 0.12 : 0)
+    + (s.cool > 0.1 * (cfg.coolMax || 1) ? 0.16 : 0);
   s.vair = clamp(0.04 + 0.05 * s.occ.act + (s.window ? 0.4 : 0) + stir + 0.01 * randn(), 0, 1.2);
 
   // guests go home

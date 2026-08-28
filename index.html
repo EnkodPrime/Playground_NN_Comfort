@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NN Comfort Playground — learning a home's comfort zone</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%232f3f4f%22/><text x=%2250%22 y=%2274%22 font-size=%2264%22 text-anchor=%22middle%22 fill=%22%23ffca7a%22>⌂</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=19">
+<link rel="stylesheet" href="css/style.css?v=20">
 </head>
 <body>
 
@@ -13,7 +13,7 @@
   <div class="brand">
     <span class="logo">⌂</span>
     <div>
-      <h1>NN Comfort Playground <span class="ver">v19 · 2026-08-27</span></h1>
+      <h1>NN Comfort Playground <span class="ver">v20 · 2026-08-27</span></h1>
       <p>A network learns the comfort zone from votes, then runs the heating — in the browser, no libraries</p>
     </div>
   </div>
@@ -282,9 +282,10 @@
         <option value="600">×600 (10 h/s)</option>
       </select>
     </label>
-    <label class="ctl inline" title="Who runs the heater: the network's learned comfort zone, a plain thermostat with a fixed target, or your hand on the power."><span>Controller</span>
+    <label class="ctl inline" title="How the vote becomes a command. Comfort zone: scan the temperature axis through the network, take its most comfortable point as a setpoint and let a PI controller chase it — interpretable, and every classical control trick still applies. Demand signal: no setpoint at all, drive the plant directly against p(too warm) − p(too cold), a signed comfort error the network outputs continuously. Or a fixed thermostat / your hand, for comparison."><span>Controller</span>
       <select id="loopMode">
-        <option value="nn" selected>NN comfort zone</option>
+        <option value="nn" selected>NN comfort zone → setpoint → PI</option>
+        <option value="demand">NN demand signal (direct)</option>
         <option value="thermo">Fixed thermostat</option>
         <option value="manual">Manual power</option>
       </select>
@@ -310,7 +311,25 @@
         <option value="4000">4 kW</option>
       </select>
     </label>
-    <label class="ctl inline" title="Heat escaping through the walls per degree of indoor–outdoor difference: about 40 W/K is a well-insulated home, 160 a leaky one."><span>Insulation <b id="insulVal">80</b> W/K</span>
+        <label class="ctl inline" title="Cooling capacity. With none the controller can only heat and a hot room simply has to be endured; with a cooler the command becomes signed — positive heats, negative cools — and the network's vote decides which.">
+      <span>Cooling</span>
+      <select id="coolMax">
+        <option value="0" selected>none (heating only)</option>
+        <option value="1000">1 kW</option>
+        <option value="2000">2 kW</option>
+        <option value="3500">3.5 kW</option>
+      </select>
+    </label>
+
+    <label class="ctl inline" title="What the wires can carry. Modulating: a valve or inverter unit sits anywhere between 0 and 100%. Relay: a plain on/off contactor — it fires at the deadband edge, holds until the demand has clearly gone (hysteresis) and refuses to switch more often than every 6 minutes, because short-cycling kills compressors. Watch the strip under the ribbon.">
+      <span>Output</span>
+      <select id="output">
+        <option value="mod" selected>Modulating 0–100%</option>
+        <option value="relay">Relay on/off</option>
+      </select>
+    </label>
+
+<label class="ctl inline" title="Heat escaping through the walls per degree of indoor–outdoor difference: about 40 W/K is a well-insulated home, 160 a leaky one."><span>Insulation <b id="insulVal">80</b> W/K</span>
       <input type="range" id="insul" min="40" max="160" step="5" value="80">
     </label>
     <label class="ctl inline" title="The month the simulated room starts in — changing it restarts the loop in that season."><span>Start in</span>
@@ -341,8 +360,10 @@
     temperature range the network currently calls comfortable, the dashed line its most comfortable
     point T* — the setpoint the PI controller chases. Dots are occupant votes (white ring = the
     network predicted that vote). Below: the network's live opinion as stacked probabilities, the
-    heater power as the dark line, and a strip that is green while the network's vote matches the
-    comfort model. The zone is nowhere in the code — it lives in the weights, and it moves with
+    command signal as the dark line — above the dashed zero it heats, below it cools — then the
+    relay strip (<span style="color:#e0342b">red</span> heating,
+    <span style="color:#0877bd">blue</span> cooling, grey off) and a strip that is green while the
+    network's vote matches the comfort model. The zone is nowhere in the code — it lives in the weights, and it moves with
     the season, the draught and the people.</p>
 </section>
 
@@ -387,6 +408,16 @@
       moments where someone just stopped moving: the body is still warm for a quarter of an hour
       (metabolic inertia), the snapshot cannot know it, the window can. Click a filter to see the
       little rise/fall pattern it slides along the hour.</li>
+    <li><b>From a vote to a wire.</b> Give the room 2 kW of cooling and start in July, then
+      compare the two NN controllers. <i>Comfort zone</i> asks the network <b>where</b> comfort is
+      and chases that setpoint; <i>demand signal</i> never computes a temperature at all — it
+      drives the plant against p(too warm) − p(too cold), the network's own signed comfort error.
+      Both reach the same zone; the second is what you would ship on a device with no thermostat
+      logic in it whatsoever.</li>
+    <li><b>Modulating versus relay.</b> Switch the output to <i>Relay on/off</i> and watch the
+      command square up into bursts, the room temperature ripple, and the strip under the ribbon
+      count the compressor starts. Deadband and minimum cycle time are not decoration — they are
+      what keeps hardware alive.</li>
     <li><b>Kill a sensor.</b> Train normally, start the loop, then set <i>Fail a sensor</i> to
       wall temperature: the zone jumps and control degrades. Retrain with <i>sensor dropout</i>
       on and repeat — one network now survives any single dead sensor with barely any loss
@@ -397,14 +428,14 @@
   </ul>
 </footer>
 
-<script src="js/comfort.js?v=19"></script>
-<script src="js/sim.js?v=19"></script>
-<script src="js/data.js?v=19"></script>
-<script src="js/nn.js?v=19"></script>
-<script src="js/rnn.js?v=19"></script>
-<script src="js/viz.js?v=19"></script>
-<script src="js/map.js?v=19"></script>
-<script src="js/loop.js?v=19"></script>
-<script src="js/main.js?v=19"></script>
+<script src="js/comfort.js?v=20"></script>
+<script src="js/sim.js?v=20"></script>
+<script src="js/data.js?v=20"></script>
+<script src="js/nn.js?v=20"></script>
+<script src="js/rnn.js?v=20"></script>
+<script src="js/viz.js?v=20"></script>
+<script src="js/map.js?v=20"></script>
+<script src="js/loop.js?v=20"></script>
+<script src="js/main.js?v=20"></script>
 </body>
 </html>

@@ -14,11 +14,15 @@ const LOOP_VIEW = 480;               // minutes of history on the charts (8 h)
 const loop = {
   on: false,
   sim: null,
-  mode: 'nn',                        // 'nn' | 'thermo' | 'manual'
+  mode: 'nn',                        // 'nn' | 'demand' | 'thermo' | 'manual'
+  output: 'mod',                     // 'mod' — modulating; 'relay' — on/off
   speed: 30,                         // simulated minutes per real second
   acc: 0,                            // fractional minutes carried between frames
   setpoint: 21, manual: 0.35,
   uI: 0.3, u: 0,                     // PI integrator and last command
+  demand: 0, demandF: 0,             // p(too warm) − p(too cold), raw and filtered
+  relay: 0, relayHold: 99,           // on/off state and minutes since it changed
+  lastProbs: null,                   // the measurement the controller acts on
   band: null, bandAge: 999,
   learn: false,
   hist: [],                          // one entry per minute
@@ -36,6 +40,43 @@ function loopRestart(cfg) {
   loop.hist.length = 0; loop.votes.length = 0;
   loop.minutes = 0; loop.acc = 0; loop.uI = 0.3; loop.band = null; loop.bandAge = 999;
   loop.noVote = 0; loop.agreeVote = 0;
+  loop.relay = 0; loop.relayHold = 99; loop.demand = 0; loop.demandF = 0; loop.lastProbs = null;
+}
+
+/* ------------------------------------------------------ the output stage */
+const RELAY_MIN_CYCLE = 6;           // minutes a relay must hold its state
+
+/**
+ * Turns a continuous demand into what the wires actually carry.
+ *
+ * `mod` passes it through — a modulating valve or an inverter unit can sit at
+ * 37% power. `relay` is the classic on/off contactor: it fires at the deadband
+ * edge, holds until the demand has clearly gone (hysteresis), and refuses to
+ * change state more often than every few minutes, because short-cycling
+ * destroys compressors.
+ */
+function applyOutput(uRaw, deadband, canCool) {
+  let u = clamp(uRaw, canCool ? -1 : 0, 1);
+  if (loop.output === 'mod') {
+    // even a modulating unit has a deadband: nothing runs for a tiny demand
+    if (Math.abs(u) < deadband * 0.4) u = 0;
+    loop.relay = u > 0 ? 1 : u < 0 ? -1 : 0;
+    return u;
+  }
+  loop.relayHold++;
+  const on = loop.relay;
+  let want = on;
+  if (on === 0) {
+    if (u > deadband) want = 1;
+    else if (canCool && u < -deadband) want = -1;
+  } else if (on > 0) {
+    if (u < deadband * 0.25) want = 0;
+  } else if (u > -deadband * 0.25) want = 0;
+  if (want !== on && loop.relayHold >= RELAY_MIN_CYCLE) {
+    loop.relay = want;
+    loop.relayHold = 0;
+  }
+  return loop.relay;
 }
 
 /**
@@ -72,21 +113,56 @@ function loopComputeBand(model, ids, sens, enc) {
 function loopMinute(model, ids, opt) {
   const s = loop.sim;
 
-  // ---- decide the heater command
-  let u;
+  // ---- decide the command: one signed number, + heats, − cools
+  const canCool = (s.cfg.coolMax || 0) > 0;
+  const lo = canCool ? -1 : 0;
+  const deadband = loop.empty ? 0.35 : 0.15;         // wider band in an empty room
+  let uRaw;
   if (loop.mode === 'manual') {
-    u = loop.manual;
+    uRaw = loop.manual;
+  } else if (loop.mode === 'demand') {
+    /* ---- DIRECT POLICY -------------------------------------------------
+     * No setpoint at all: the three class probabilities ARE the error signal.
+     *   demand = p(too warm) − p(too cold)   ∈ [−1, +1]
+     * It is −1 when the network is certain the room is too cold, +1 when
+     * certain it is too warm, and ~0 inside the comfortable zone — a signed,
+     * continuous comfort error that needs no thermometer target. Drive the
+     * plant against it: heat when it is negative, cool when positive. */
+    const p = loop.lastProbs;
+    const raw = p ? p[CLASS_INDEX.warm] - p[CLASS_INDEX.cold] : 0;
+    loop.demand = raw;
+    // comfort is a slow quantity and sensors are noisy, so the raw vote is
+    // filtered (~7 min) before it drives anything — without this the command
+    // chatters between heating and cooling on measurement noise alone
+    loop.demandF += (raw - loop.demandF) * 0.15;
+    const d = Math.abs(loop.demandF) < 0.08 ? 0 : loop.demandF;   // demand deadband
+    if (d === 0) {
+      // inside the comfortable band there is nothing to correct: the plant
+      // idles and the integrator bleeds away, exactly as a deadband controller
+      // must — carrying an old integrator into the band is how a thermostat
+      // ends up heating a room that is already warm enough
+      loop.uI *= 0.97;
+      uRaw = 0;
+    } else {
+      loop.uI = clamp(loop.uI - 0.02 * d, lo, 1);     // integral removes the offset
+      uRaw = clamp(loop.uI - 2.0 * d, lo, 1);         // proportional on the vote
+    }
   } else {
+    /* ---- SETPOINT POLICY ------------------------------------------------
+     * Ask the network where comfort is (the band scan), take its most
+     * comfortable point as the setpoint, and let a conventional PI chase it.
+     * Interpretable, and it reuses every control trick the industry knows. */
     let target;
     if (loop.mode === 'thermo') target = loop.setpoint;
     else {
       target = (loop.band && loop.band.tstar !== null) ? loop.band.tstar : 21;
-      if (loop.empty) target -= 1.5;                // setback while nobody is home
+      if (loop.empty) target -= 1.5;                 // setback while nobody is home
     }
     const e = target - s.ta;
-    loop.uI = clamp(loop.uI + 0.015 * e, 0, 1);       // slow integral part
-    u = clamp(loop.uI + 0.35 * e, 0, 1);              // plus a proportional kick
+    loop.uI = clamp(loop.uI + 0.015 * e, lo, 1);
+    uRaw = clamp(loop.uI + 0.35 * e, lo, 1);
   }
+  const u = applyOutput(uRaw, loop.mode === 'manual' ? 0 : deadband, canCool);
   loop.u = u;
 
   simStep(s, u);
@@ -94,6 +170,7 @@ function loopMinute(model, ids, opt) {
 
   const sens = sensorState(s, 0.3);                    // live sensors are a bit noisy
   const probs = model.forward(opt.enc ? opt.enc(sens) : encodeState(sens, ids), false);
+  loop.lastProbs = probs;             // the next minute's decision acts on this
 
   // refresh the learned comfort band every few minutes (it moves slowly).
   // An empty room is a state nobody ever votes in, so the network knows
@@ -123,7 +200,9 @@ function loopMinute(model, ids, opt) {
     lo: loop.band ? loop.band.lo : null,
     hi: loop.band ? loop.band.hi : null,
     tstar: loop.band ? loop.band.tstar : null,
-    u: s.power / s.cfg.pmax,
+    u: (s.power - s.cool) / Math.max(s.cfg.pmax, s.cfg.coolMax || 1),
+    relay: loop.relay,
+    demand: loop.demandF,
     probs: probs.slice(),
     occ: s.occ.n, asleep: s.occ.asleep,
     truthLabel: s.occ.n > 0 ? truth.label : -1,
@@ -227,12 +306,13 @@ function drawLoopTemps(ctx, w, h) {
   ctx.fillText('← ' + (LOOP_VIEW / 60) + ' h of simulated time', 28, 10);
 }
 
-/** The network's live opinion, the heater power and the agreement strip. */
+/** The network's live opinion, the signed command and the relay state. */
 function drawLoopRibbon(ctx, w, h) {
   ctx.clearRect(0, 0, w, h);
   const H = loop.hist;
   if (!H.length) return;
-  const barH = h - 9;
+  const relayH = 7, agreeH = 7;
+  const barH = h - relayH - agreeH - 2;
   const cw = w / LOOP_VIEW;
   for (let i = 0; i < H.length; i++) {
     const e = H[i];
@@ -247,6 +327,10 @@ function drawLoopRibbon(ctx, w, h) {
       y += hh;
     }
     ctx.globalAlpha = 1;
+    // the wires: what the controller actually switched on this minute
+    const r = e.relay || 0;
+    ctx.fillStyle = r > 0 ? '#e0342b' : r < 0 ? '#0877bd' : '#e7ebef';
+    ctx.fillRect(x, barH + 1, Math.ceil(cw), relayH);
     // agreement strip: network vote vs the true (noiseless) vote
     let c = '#d5dbe1';
     if (e.truthLabel >= 0) {
@@ -254,19 +338,33 @@ function drawLoopRibbon(ctx, w, h) {
       c = am === e.truthLabel ? '#2e9e5b' : '#e0342b';
     }
     ctx.fillStyle = c;
-    ctx.fillRect(x, h - 7, Math.ceil(cw), 7);
+    ctx.fillRect(x, h - agreeH, Math.ceil(cw), agreeH);
   }
-  // heater power as a line over the ribbon
+  // the command signal itself, signed around a zero line: up heats, down cools
+  const mid = barH / 2;
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(w, mid); ctx.stroke();
+  ctx.setLineDash([]);
   ctx.beginPath();
   for (let i = 0; i < H.length; i++) {
-    const y = finite(H[i].u) ? (1 - H[i].u) * (barH - 2) + 1 : barH - 1;
+    const u = finite(H[i].u) ? H[i].u : 0;
+    const y = mid - u * (mid - 2);
     if (i === 0) ctx.moveTo(i * cw, y); else ctx.lineTo(i * cw, y);
   }
-  ctx.strokeStyle = 'rgba(20,30,40,0.85)';
+  ctx.strokeStyle = 'rgba(20,30,40,0.9)';
   ctx.lineWidth = 1.4;
   ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.font = '600 9px system-ui,sans-serif';
-  ctx.fillText('heater power', 5, (1 - H[H.length - 1].u) * (barH - 2) - 3 < 10 ? 12 : (1 - H[H.length - 1].u) * (barH - 2) - 3);
+  ctx.fillText('heat ↑', 5, 11);
+  ctx.fillText('cool ↓', 5, barH - 4);
+}
+
+/** What the wires are doing right now, in words. */
+function hvacText(s) {
+  if (s.cool > 20) return '<span style="color:#0877bd">COOL</span> <b>' + Math.round(s.cool) + ' W</b>';
+  if (s.power > 20) return '<span style="color:#e0342b">HEAT</span> <b>' + Math.round(s.power) + ' W</b>';
+  return '<span style="color:#7b8794">OFF</span>';
 }
 
 /** One line of live numbers under the loop controls. */
@@ -282,6 +380,10 @@ function loopStatusHtml(opt) {
     ? loop.band.lo.toFixed(1) + '–' + loop.band.hi.toFixed(1) + ' °C, T* = <b>' + loop.band.tstar.toFixed(1) + ' °C</b>' +
       (loop.empty ? ' <span style="color:#7b8794">(−1.5° setback, empty)</span>' : '')
     : '<span class="bad">no credible zone in reach — train the network (or it is genuinely too hot: a heater cannot cool)</span>';
+  const dem = loop.mode === 'demand'
+    ? ' · demand <b>' + (loop.demandF >= 0 ? '+' : '−') + Math.abs(loop.demandF).toFixed(2) +
+      '</b> (p<sub>warm</sub>−p<sub>cold</sub>)'
+    : '';
   const agree = loop.noVote ? ' · votes matched <b>' + Math.round(100 * loop.agreeVote / loop.noVote) + '%</b>' : '';
   const dead = loop.failName
     ? ' · <span class="bad">' + loop.failName + ' sensor failed — its channels arrive zeroed</span>' : '';
@@ -289,9 +391,9 @@ function loopStatusHtml(opt) {
     ? ' · <span class="bad">network output is NaN — training diverged, press ⟳ to reset the weights</span>' : '';
   return 'Day ' + s.doy + ' (' + M[s.dow] + ') <b>' + hh + ':' + mm + '</b> · ' + who +
     ' · T room <b>' + s.ta.toFixed(1) + '°</b> · walls <b>' + s.tw.toFixed(1) + '°</b> · outside <b>' + s.tout.toFixed(1) + '°</b>' +
-    ' · RH <b>' + Math.round(s.rh) + '%</b> · heater <b>' + Math.round(s.power) + ' W</b>' +
+    ' · RH <b>' + Math.round(s.rh) + '%</b> · ' + hvacText(s) +
     (s.window ? ' · <span class="bad">window open</span>' : '') +
     (s.guests ? ' · ' + s.guests + ' guests' : '') +
     ' · true PMV <b>' + (e.pmv >= 0 ? '+' : '−') + Math.abs(e.pmv).toFixed(2) + '</b>' +
-    (loop.mode === 'nn' ? ' · learned zone: ' + band : '') + dead + agree + broken;
+    (loop.mode === 'nn' ? ' · learned zone: ' + band : '') + dem + dead + agree + broken;
 }

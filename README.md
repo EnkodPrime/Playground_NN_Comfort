@@ -139,9 +139,37 @@ the live loop delivers a chosen channel as zeros while the room's physics stays 
 they are the missing-sensor story of real hardware: a normally trained network stumbles when a
 sensor dies; a dropout-trained one degrades gracefully, at almost no cost while everything works.
 
+## From a vote to a control signal
+
+The network answers *too cold / comfortable / too warm*. Turning that into wires takes one more
+step, and the loop offers the two ways it is done in practice:
+
+* **Comfort zone → setpoint → PI.** Scan the air-temperature axis through the network at the
+  current conditions, take the most comfortable point as **T\***, and let a conventional PI
+  controller chase it. The learned model supplies the *target*; a century of control engineering
+  supplies the *tracking*. Interpretable — you can read T\* off the chart and argue with it.
+* **Demand signal (direct).** No setpoint at all. The class probabilities already are a signed
+  comfort error:
+
+  ```
+  demand = p(too warm) − p(too cold)     ∈ [−1, +1]
+  ```
+
+  −1 means "certainly too cold", +1 "certainly too warm", ≈0 inside the zone. Drive the plant
+  against it — heat when negative, cool when positive — with a slow filter (comfort is a slow
+  quantity, sensors are not) and a deadband. This is what ships on a device that has no
+  thermostat logic in it at all.
+
+Either way the command is **one signed number**: positive is a fraction of heating power,
+negative a fraction of cooling, and the output stage decides what the wires do — **modulating**
+(a valve or inverter unit anywhere between 0 and 100%) or **relay** (a plain contactor with
+deadband, hysteresis and a minimum cycle time, because short-cycling destroys compressors).
+The ribbon draws the command signed around zero, with a strip below it showing what actually
+switched on: red heating, blue cooling, grey off.
+
 ## The control loop
 
-Press ▶ on the live loop and the trained network is put in charge of the heater:
+Press ▶ on the live loop and the trained network is put in charge of the plant:
 
 1. Every few simulated minutes the controller scans the air-temperature axis through the network
    at the current humidity, walls, weather, hour and movement: *"at which temperature would these
@@ -149,8 +177,8 @@ Press ▶ on the live loop and the trained network is put in charge of the heate
 2. The scan must produce a **credible zone** — one contiguous stretch the network is confident
    about; a few stray cells of extrapolation are ignored.
 3. The probability-weighted centre of that stretch becomes the setpoint **T\***, and a small PI
-   controller drives the heater towards it. Nobody home? The scan asks for a typical seated
-   occupant and holds 1.5 °C below the answer.
+   controller drives the plant towards it. Nobody home? The scan asks for a typical seated
+   occupant, holds 1.5 °C below the answer and widens the deadband.
 
 The chart shows the room, the walls, the weather, the learned band, T\*, the heater power and
 every vote as it happens — with a strip that stays green while the network's opinion matches the
