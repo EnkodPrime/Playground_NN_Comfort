@@ -2,7 +2,7 @@
 
 const state = {
   // the default is the cleanest experiment: two inputs, controlled study
-  features: { ta: true, rh: false, tw: false, tout: false, hour: true, doy: false, mov: false, vair: false },
+  features: { ta: true, rh: false, tw: false, tout: false, hour: true, doy: false, mov: false, vair: false, hvac: false },
   arch: 'cnn',         // 'cnn' — 1D convolution; 'rnn' — recurrence over the last hour
   cnnLayers: [{ filters: 4, kernel: 5 }, { filters: 4, kernel: 5 }],
   rnnLayers: [{ units: 6 }],

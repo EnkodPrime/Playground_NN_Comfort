@@ -57,7 +57,25 @@ measures, so they follow from the occupants' routine:
   is comfortable at 17 °C, a summer night at 24 °C, and the evening sofa at 21.5 °C — three
   different answers the network has to reconcile through the time, season and movement inputs.
 
-A vote is PMV plus preference plus noise, thresholded at ±0.5: real households simply like it
+**PMV alone is not the whole story, and the standard says so.** It is a *whole-body,
+steady-state* index — it cannot know that a room is falling, or that something is blowing on your
+neck. ISO 7730 treats those separately, and so does the generating model here:
+
+* **Draught rate** — the standard's own local-discomfort formula,
+  `DR = (34 − ta)·(v − 0.05)^0.62·(0.37·v·Tu + 3.14)`, the percentage of people dissatisfied by
+  moving air. Still air scores 3%, a working cooler 23%, an open window in winter 72% — which is
+  −1.1 PMV on its own. This is the most common complaint about air conditioning, and the reason
+  an open window is felt long before the thermometer moves.
+* **The element itself** — a radiant heater warms the body directly, minutes before the wall mass
+  follows, so its output raises the radiant temperature the skin sees. It is also an *input* the
+  network may use (`Heating / cooling output`): a controller always knows what it is doing, and
+  it matters. Adding that one input took a CNN from 89.0% to 92.4% on a controlled study, and
+  from unlearnable to 92.5% on the moments when the element is working hard.
+* **Transients** — a room falling at 5 K/h feels colder than the same room sitting still, because
+  the skin answers in seconds while the core lags. The rate is nowhere in the inputs: it lives in
+  the *history*, so only a model that reads the window can recover it.
+
+A vote is PMV plus these, plus preference, plus noise, thresholded at ±0.5: real households simply like it
 warmer or cooler (the *preference* slider shifts the truth), and real people are not thermometers
 (the *inconsistency* slider is the standard deviation of their answers). The network never sees a
 PMV value — only sensors and votes.

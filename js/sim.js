@@ -67,6 +67,7 @@ function simInit(cfg) {
     shower: 0,                    // minutes of shower moisture left
     occ: { n: 0, act: 0, asleep: false },
     mov: 0, movEma: 0, vair: 0.05, rh: 50,
+    taPrev: ta, dTa: 0, hvacCmd: 0,   // how fast the room is moving, and why
     lastVoteMin: -999, lastVotePmv: 0,
   };
   drawSleepTimes(s);
@@ -153,6 +154,12 @@ function simStep(s, u) {
              + qWall) * dt / HOUSE.cWall;
   s.ta += dTa; s.tw += dTw;
 
+  // the rate the body actually feels, smoothed over about eight minutes
+  const rate = (s.ta - s.taPrev) * 60;              // [K/h]
+  s.taPrev = s.ta;
+  s.dTa += (rate - s.dTa) * 0.12;
+  s.hvacCmd = u;
+
   // moisture balance: people and showers add, ventilation swaps with outdoors
   if (s.shower > 0) s.shower--;
   const morning = s.hour > 6.9 && s.hour < 8.4, evening = s.hour > 21.2 && s.hour < 22.7;
@@ -191,6 +198,9 @@ function sensorState(s, noiseScale) {
     doy: s.doy,
     mov: clamp(s.mov + 0.02 * k * randn(), 0, 1),
     movEff: s.movEma,                    // what the body actually feels
+    hvac: s.hvacCmd,                     // the element's own output, an input the
+                                         // controller always knows about itself
+    dTa: s.dTa,                          // truth only: derivable from the history
     vair: Math.max(0, s.vair + 0.015 * k * randn()),
   };
 }

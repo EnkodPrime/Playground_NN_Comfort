@@ -121,6 +121,31 @@ function metOf(hour, mov, movEff) {
   return 0.9 + 1.0 * clamp(m, 0, 1);
 }
 
+/* --------------------------------------- local discomfort and transients */
+/* PMV is a whole-body, steady-state index. ISO 7730 knows that this is not the
+ * whole story and adds separate criteria for LOCAL discomfort; the two
+ * strongest ones in a home are below. Both are what make a room with a
+ * "correct" air temperature still feel wrong. */
+
+const DRAUGHT_K = 0.015;   // PMV units per % dissatisfied by draught
+const RATE_K = 0.15;       // PMV units per K/h of temperature change
+const RADIANT_BOOST = 3.0; // K added to the radiant temperature at full radiant output
+
+/**
+ * Draught rate — ISO 7730's local-discomfort index: the percentage of people
+ * dissatisfied by moving air on the neck and ankles.
+ *   DR = (34 − ta)·(v − 0.05)^0.62·(0.37·v·Tu + 3.14)
+ * Tu is turbulence intensity [%], ~40% for a room mixed by a fan or a window.
+ * Below 0.05 m/s the air is still and nobody complains. This is the single
+ * most common complaint about air conditioning, and about open windows in
+ * winter — the air temperature has barely moved, but the room feels awful.
+ */
+function draughtRate(ta, v, tu) {
+  if (v <= 0.05) return 0;
+  const Tu = tu === undefined ? 40 : tu;
+  return clamp((34 - ta) * Math.pow(v - 0.05, 0.62) * (0.37 * v * Tu + 3.14), 0, 100);
+}
+
 /**
  * The true comfort evaluation for a sensor state — PMV with met and clo filled
  * in from the occupants' routine. `pref` shifts the whole scale: some
@@ -131,10 +156,22 @@ function metOf(hour, mov, movEff) {
 function comfortTruth(s, pref) {
   const met = metOf(s.hour, s.mov, s.movEff);
   const clo = cloOf(s.doy, s.hour, s.mov);
-  const r = pmvPPD(s.ta, s.tw, Math.max(0.05, s.vair), s.rh, met, clo);
-  const pmv = r.pmv + (pref || 0);
+  // The element is part of the room. A radiant heater warms the body directly,
+  // minutes before the wall mass follows — so the radiant temperature the skin
+  // sees is not the wall temperature alone.
+  const hvac = s.hvac || 0;
+  const tr = s.tw + RADIANT_BOOST * Math.max(0, hvac);
+  const r = pmvPPD(s.ta, tr, Math.max(0.05, s.vair), s.rh, met, clo);
+
+  const dr = draughtRate(s.ta, s.vair);      // local cooling by moving air
+  const rate = s.dTa || 0;                   // K/h over the last quarter hour
+  // A falling room feels colder than the same temperature reached from below:
+  // the skin answers in seconds while the core lags. This is why an open window
+  // is felt long before the thermometer has moved.
+  const pmv = r.pmv - DRAUGHT_K * dr + RATE_K * rate + (pref || 0);
+
   const label = pmv < -0.5 ? CLASS_INDEX.cold : pmv > 0.5 ? CLASS_INDEX.warm : CLASS_INDEX.comf;
-  return { pmv, ppd: r.ppd, label, met, clo };
+  return { pmv, ppd: r.ppd, label, met, clo, dr, rate };
 }
 
 /**

@@ -87,7 +87,11 @@ function applyOutput(uRaw, deadband, canCool) {
  * comfortable stretch — the single best point of a softmax plateau is noise.
  */
 function loopComputeBand(model, ids, sens, enc) {
-  const s = Object.assign({}, sens);
+  // The scan asks "at which temperature would this room be comfortable?" — a
+  // question about a settled room, so the element idles and nothing moves.
+  // Scanning with the heater still blasting lets its own radiant warmth talk
+  // the controller into a setpoint it cannot hold once the heater stops.
+  const s = Object.assign({}, sens, { hvac: 0, dTa: 0 });
   let run = null, best = null;
   for (let t = 12; t <= 30.001; t += 0.25) {
     s.ta = t;

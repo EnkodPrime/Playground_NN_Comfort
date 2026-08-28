@@ -26,6 +26,8 @@ const FEATURES = [
     tip: "A motion-sensor reading: how much the people are moving. Active bodies make their own heat and prefer it cooler."},
   { id: 'vair', name: 'Air movement',        short: 'Air v',  unit: 'm/s', min: 0,   max: 1,   mean: 0.15, span: 0.2,  step: 0.01, fmt: 2, dflt: 0.07,
     tip: "Air speed — draughts. Moving air carries heat off the skin, so the same temperature feels colder."},
+  { id: 'hvac', name: 'Heating / cooling output', short: 'HVAC', unit: '',  min: -1,  max: 1,   mean: 0,    span: 0.5,  step: 0.05, fmt: 2, dflt: 0,
+    tip: "What the element itself is doing: +1 full heating, −1 full cooling. A controller always knows its own output, and it matters — a radiant heater warms the body minutes before the walls follow, and a blasting cooler chills the skin long before the air is cold."},
 ];
 const FEAT_INDEX = {};
 FEATURES.forEach((f, i) => (FEAT_INDEX[f.id] = i));
@@ -269,11 +271,14 @@ function makeUniformDataset(n, ids, opt) {
     const s = {
       ta, hour, doy,
       mov: active.mov ? rand(0, 1) : (asleep ? 0.03 : 0.35),
-      vair: active.vair ? rand(0, 1) : 0.06,
+      hvac: active.hvac ? rand(-1, 1) : 0,
+      vair: 0,                                    // filled just below, from hvac
       tout: active.tout ? rand(F.tout.min, F.tout.max) : outdoorTemp(doy, hour, 0),
       tw: active.tw ? rand(F.tw.min, F.tw.max) : ta - 0.85,
       rh: active.rh ? rand(F.rh.min, F.rh.max) : clamp(48 - 0.8 * (ta - 21), 25, 70),
     };
+
+    s.vair = active.vair ? rand(0, 1) : 0.06 + 0.16 * Math.max(0, -s.hvac);
 
     // the last hour is a small STORY, not always a still photograph: sometimes
     // the person just changed activity, sometimes the room is mid-warm-up.
@@ -281,7 +286,12 @@ function makeUniformDataset(n, ids, opt) {
     const movStep = active.mov && Math.random() < 0.4;
     const movFrom = movStep ? rand(0, 1) : s.mov;
     const movT0 = movStep ? randInt(4, WIN_T - 2) : 0;
-    const taRamp = active.ta && Math.random() < 0.35 ? rand(-2.5, 2.5) : 0;
+    // a room whose element is running is a room that MOVES, and that rate is
+    // felt: the window carries the ramp, and only a model reading the history
+    // can recover it
+    const taRamp = !active.ta ? 0
+      : active.hvac ? clamp(2.5 * s.hvac + rand(-0.8, 0.8), -3, 3)
+      : (Math.random() < 0.35 ? rand(-2.5, 2.5) : 0);
 
     const cols = [];
     let movEma = movFrom;
@@ -301,10 +311,12 @@ function makeUniformDataset(n, ids, opt) {
         mov: clamp(movT + 0.02 * k * randn(), 0, 1),
         vair: Math.max(0, s.vair + 0.015 * k * randn()),
       };
+      st.hvac = s.hvac;
       cols.push(encodeState(st, ids));
       if (t === WIN_T - 1) m = st;
     }
     m.movEff = movEma;                     // what the voter's body actually feels
+    m.dTa = taRamp / ((WIN_T - 1) * WIN_STRIDE / 60);   // K/h across the window
 
     const v = voteSample(m, opt.pref, opt.sigma);
     xs.push(cols[WIN_T - 1]);
@@ -327,8 +339,11 @@ function typicalFill(s, keep) {
   keep.forEach((id) => (a[id] = true));
   const out = Object.assign({}, s);
   const asleep = out.hour >= 22.75 || out.hour < 6.75;
+  if (!a.hvac) out.hvac = 0;                     // the element idles by default
+  if (out.dTa === undefined) out.dTa = 0;        // and the room is at rest
   if (!a.mov) out.mov = asleep ? 0.03 : 0.35;
-  if (!a.vair) out.vair = 0.06;
+  // a running cooler blows: the draught follows the element, not chance
+  if (!a.vair) out.vair = 0.06 + 0.16 * Math.max(0, -(out.hvac || 0));
   if (!a.tout) out.tout = outdoorTemp(out.doy, out.hour, 0);
   if (!a.tw) out.tw = out.ta - 0.85;
   if (!a.rh) out.rh = clamp(48 - 0.8 * (out.ta - 21), 25, 70);
@@ -362,6 +377,7 @@ function randomState(coverage) {
     rh: clamp(rand(28, 68) - 0.8 * (ta - 21), 18, 92),
     tw: ta + rand(-2.2, 1.2) + clamp((tout - ta) * 0.06, -1.5, 1.5),
     tout, hour, doy, mov,
+    hvac: 0, dTa: 0,
     vair: Math.random() < 0.88 ? rand(0.03, 0.18) : rand(0.18, 0.6),
   };
 }

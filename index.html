@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NN Comfort Playground — learning a home's comfort zone</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%232f3f4f%22/><text x=%2250%22 y=%2274%22 font-size=%2264%22 text-anchor=%22middle%22 fill=%22%23ffca7a%22>⌂</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=20">
+<link rel="stylesheet" href="css/style.css?v=21">
 </head>
 <body>
 
@@ -13,7 +13,7 @@
   <div class="brand">
     <span class="logo">⌂</span>
     <div>
-      <h1>NN Comfort Playground <span class="ver">v20 · 2026-08-27</span></h1>
+      <h1>NN Comfort Playground <span class="ver">v21 · 2026-08-27</span></h1>
       <p>A network learns the comfort zone from votes, then runs the heating — in the browser, no libraries</p>
     </div>
   </div>
@@ -408,6 +408,16 @@
       moments where someone just stopped moving: the body is still warm for a quarter of an hour
       (metabolic inertia), the snapshot cannot know it, the window can. Click a filter to see the
       little rise/fall pattern it slides along the hour.</li>
+    <li><b>The element is part of the room.</b> Tick <i>Heating / cooling output</i> as an input
+      and put it on the map's Y axis: at the same air temperature, a radiant heater at full output
+      shifts the whole zone — it warms the body minutes before the walls follow. Measured on a
+      controlled study, adding this one input took a CNN from 89.0% to 92.4% overall, and from
+      nothing to 92.5% on the moments when the element is working hard.</li>
+    <li><b>Open a window and watch the vote before the thermometer.</b> The truth model now
+      carries ISO 7730's draught rate — an open window at 0.45 m/s puts 72% of people in a
+      draught, which is −1.1 PMV on its own — plus a transient term: a room falling at 5 K/h
+      feels colder than the same room sitting still. Both live in the history, so only a model
+      that reads the window can see them coming.</li>
     <li><b>From a vote to a wire.</b> Give the room 2 kW of cooling and start in July, then
       compare the two NN controllers. <i>Comfort zone</i> asks the network <b>where</b> comfort is
       and chases that setpoint; <i>demand signal</i> never computes a temperature at all — it
@@ -428,14 +438,14 @@
   </ul>
 </footer>
 
-<script src="js/comfort.js?v=20"></script>
-<script src="js/sim.js?v=20"></script>
-<script src="js/data.js?v=20"></script>
-<script src="js/nn.js?v=20"></script>
-<script src="js/rnn.js?v=20"></script>
-<script src="js/viz.js?v=20"></script>
-<script src="js/map.js?v=20"></script>
-<script src="js/loop.js?v=20"></script>
-<script src="js/main.js?v=20"></script>
+<script src="js/comfort.js?v=21"></script>
+<script src="js/sim.js?v=21"></script>
+<script src="js/data.js?v=21"></script>
+<script src="js/nn.js?v=21"></script>
+<script src="js/rnn.js?v=21"></script>
+<script src="js/viz.js?v=21"></script>
+<script src="js/map.js?v=21"></script>
+<script src="js/loop.js?v=21"></script>
+<script src="js/main.js?v=21"></script>
 </body>
 </html>
