@@ -237,23 +237,27 @@ function makeUniformDataset(n, ids, opt) {
     // the typical household behind the sensors the network cannot see
     const wake = 6.75 + rand(-0.5, 0.9), bed = 22.75 + rand(-0.6, 0.9);
     const asleep = hour >= bed || hour < wake;
+    // hidden sensors are DETERMINISTIC in a controlled study — matching the
+    // typical fill the map's dotted outline uses. Random variation the network
+    // cannot see would only smear the labels around that outline, and the
+    // learned boundary would settle on the smeared average instead of the line.
     const ta = active.ta ? rand(F.ta.min, F.ta.max) : (pin.ta != null ? pin.ta : 21);
     const s = {
       ta, hour, doy,
-      mov: active.mov ? rand(0, 1) : (asleep ? rand(0.01, 0.06) : rand(0.25, 0.5)),
-      vair: active.vair ? rand(0, 1) : 0.04 + rand(0, 0.05),
-      tout: active.tout ? rand(F.tout.min, F.tout.max) : outdoorTemp(doy, hour, 2.5 * randn()),
-      tw: active.tw ? rand(F.tw.min, F.tw.max) : ta - rand(0.3, 1.4),
-      rh: active.rh ? rand(F.rh.min, F.rh.max) : clamp(48 - 0.8 * (ta - 21) + 4 * randn(), 25, 70),
+      mov: active.mov ? rand(0, 1) : (asleep ? 0.03 : 0.35),
+      vair: active.vair ? rand(0, 1) : 0.06,
+      tout: active.tout ? rand(F.tout.min, F.tout.max) : outdoorTemp(doy, hour, 0),
+      tw: active.tw ? rand(F.tw.min, F.tw.max) : ta - 0.85,
+      rh: active.rh ? rand(F.rh.min, F.rh.max) : clamp(48 - 0.8 * (ta - 21), 25, 70),
     };
 
     // the last hour is a small STORY, not always a still photograph: sometimes
-    // the person just changed activity, sometimes the room is mid-warm-up —
-    // the moments where history genuinely changes the answer
-    const movStep = Math.random() < 0.4;
-    const movFrom = movStep ? (asleep && !active.mov ? rand(0.25, 0.7) : rand(0, 1)) : s.mov;
+    // the person just changed activity, sometimes the room is mid-warm-up.
+    // History games are played only on channels the network can actually see.
+    const movStep = active.mov && Math.random() < 0.4;
+    const movFrom = movStep ? rand(0, 1) : s.mov;
     const movT0 = movStep ? randInt(4, WIN_T - 2) : 0;
-    const taRamp = Math.random() < 0.35 ? rand(-2.5, 2.5) : 0;
+    const taRamp = active.ta && Math.random() < 0.35 ? rand(-2.5, 2.5) : 0;
 
     const cols = [];
     let movEma = movFrom;
