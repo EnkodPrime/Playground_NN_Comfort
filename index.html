@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NN Comfort Playground — learning a home's comfort zone</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%232f3f4f%22/><text x=%2250%22 y=%2274%22 font-size=%2264%22 text-anchor=%22middle%22 fill=%22%23ffca7a%22>⌂</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=12">
+<link rel="stylesheet" href="css/style.css?v=13">
 </head>
 <body>
 
@@ -13,10 +13,16 @@
   <div class="brand">
     <span class="logo">⌂</span>
     <div>
-      <h1>NN Comfort Playground <span class="ver">v12 · 2026-08-27</span></h1>
+      <h1>NN Comfort Playground <span class="ver">v13 · 2026-08-27</span></h1>
       <p>A network learns the comfort zone from votes, then runs the heating — in the browser, no libraries</p>
     </div>
   </div>
+  <nav class="archsw" role="tablist">
+    <button id="archMlp" class="on" role="tab"
+      title="A fully connected network on ONE moment: the current sensor readings. It cannot know what happened ten minutes ago.">Dense · snapshot</button>
+    <button id="archCnn" role="tab"
+      title="A 1D convolutional network over the last hour of every sensor channel — the architecture of the sibling signal playground, given several inputs. Its filters slide along time and read rises, falls and recent activity.">1D CNN · last hour</button>
+  </nav>
   <div class="epochbox" title="Training is counted in epochs: one epoch means the network has worked through every example in the training set once.">
     <span class="lbl">Epoch</span>
     <span id="epoch" class="val">000,000</span><span id="epochTgt" class="tgt"></span>
@@ -168,11 +174,16 @@
       <div id="layerControls" class="layerctl"></div>
       <canvas id="net"></canvas>
     </div>
-    <p class="hint">Each box shows that unit's output over the two features chosen as the map axes —
+    <p class="hint mlponly">Each box shows that unit's output over the two features chosen as the map axes —
       all other sensors held at the probe values. <span class="sw pos"></span> positive,
       <span class="sw neg"></span> negative; link thickness is weight magnitude. The small circle is
       where the probe sits. <b>Click</b> a node for the full arithmetic below, click an input's name
       in the Data panel to remove it and see what the network can no longer learn.</p>
+    <p class="hint cnnonly">The input is no longer one moment but the <b>last hour of every sensor
+      channel</b>; each filter box shows its output curve over that window for the probe. Link
+      thickness is the total kernel weight between a channel and a filter; each filter's
+      time-average feeds the vote. <b>Click</b> a filter to see its kernel — the little pattern it
+      slides along the hour.</p>
   </section>
 
   <!-- ============================ RESULTS ============================ -->
@@ -337,19 +348,24 @@
     <li><b>Slow heaters need the walls.</b> Switch to the masonry stove: most heat arrives as
       radiation into the walls, minutes late. The wall-temperature input is what lets the network
       judge comfort correctly while the air is still catching up.</li>
+    <li><b>Snapshot vs history.</b> Enable <i>Movement of people</i>, train the Dense network,
+      quick-test it — then switch to the <i>1D CNN</i> and repeat. The controlled study plants
+      moments where someone just stopped moving: the body is still warm for a quarter of an hour
+      (metabolic inertia), the snapshot cannot know it, the window can. Click a filter to see the
+      little rise/fall pattern it slides along the hour.</li>
     <li><b>Voters are noisy.</b> Push vote inconsistency to 0.4: test accuracy falls, but the quick
       test against the noiseless model barely moves — the network averages the noise away, which is
       the whole point of learning from many votes.</li>
   </ul>
 </footer>
 
-<script src="js/comfort.js?v=12"></script>
-<script src="js/sim.js?v=12"></script>
-<script src="js/data.js?v=12"></script>
-<script src="js/nn.js?v=12"></script>
-<script src="js/viz.js?v=12"></script>
-<script src="js/map.js?v=12"></script>
-<script src="js/loop.js?v=12"></script>
-<script src="js/main.js?v=12"></script>
+<script src="js/comfort.js?v=13"></script>
+<script src="js/sim.js?v=13"></script>
+<script src="js/data.js?v=13"></script>
+<script src="js/nn.js?v=13"></script>
+<script src="js/viz.js?v=13"></script>
+<script src="js/map.js?v=13"></script>
+<script src="js/loop.js?v=13"></script>
+<script src="js/main.js?v=13"></script>
 </body>
 </html>

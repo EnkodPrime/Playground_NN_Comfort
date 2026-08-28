@@ -60,7 +60,7 @@ function simInit(cfg) {
     guests: 0, guestUntil: 0,
     shower: 0,                    // minutes of shower moisture left
     occ: { n: 0, act: 0, asleep: false },
-    mov: 0, vair: 0.05, rh: 50,
+    mov: 0, movEma: 0, vair: 0.05, rh: 50,
     lastVoteMin: -999, lastVotePmv: 0,
   };
   drawSleepTimes(s);
@@ -157,6 +157,7 @@ function simStep(s, u) {
   const movRaw = s.occ.n === 0 ? 0
     : clamp(s.occ.act * (0.55 + 0.15 * Math.min(s.occ.n, 4)) + 0.04 * randn(), 0, 1);
   s.mov += (movRaw - s.mov) * 0.5;
+  s.movEma += (s.mov - s.movEma) / 20;         // ~20-minute metabolic memory
   const stir = (ht.stirs && s.power > 0.1 * cfg.pmax) ? 0.12 : 0;
   s.vair = clamp(0.04 + 0.05 * s.occ.act + (s.window ? 0.4 : 0) + stir + 0.01 * randn(), 0, 1.2);
 
@@ -175,6 +176,7 @@ function sensorState(s, noiseScale) {
     hour: s.hour,
     doy: s.doy,
     mov: clamp(s.mov + 0.02 * k * randn(), 0, 1),
+    movEff: s.movEma,                    // what the body actually feels
     vair: Math.max(0, s.vair + 0.015 * k * randn()),
   };
 }

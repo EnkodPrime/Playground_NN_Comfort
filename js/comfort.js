@@ -109,11 +109,16 @@ function cloOf(doy, hour, mov) {
   return clo;
 }
 
-/** Metabolic rate from the movement level the sensor reports. */
-function metOf(hour, mov) {
+/** Metabolic rate from the movement level. The body stores heat: what counts
+ * is the activity of the last ~20 minutes, not this second — someone who just
+ * sat down is still warm. Callers that know the recent history pass its
+ * moving average as `movEff`; without it the instant value is used (a steady
+ * state assumption). */
+function metOf(hour, mov, movEff) {
   const asleep = sleepHours(hour) && mov < 0.12;
   if (asleep) return 0.75;
-  return 0.9 + 1.0 * clamp(mov, 0, 1);
+  const m = movEff !== undefined ? movEff : mov;
+  return 0.9 + 1.0 * clamp(m, 0, 1);
 }
 
 /**
@@ -124,7 +129,7 @@ function metOf(hour, mov) {
  * @returns {{pmv:number, ppd:number, label:number}} label indexes CLASSES
  */
 function comfortTruth(s, pref) {
-  const met = metOf(s.hour, s.mov);
+  const met = metOf(s.hour, s.mov, s.movEff);
   const clo = cloOf(s.doy, s.hour, s.mov);
   const r = pmvPPD(s.ta, s.tw, Math.max(0.05, s.vair), s.rh, met, clo);
   const pmv = r.pmv + (pref || 0);

@@ -45,13 +45,13 @@ function loopRestart(cfg) {
  * manifold the votes came from. T* is the probability-weighted centre of the
  * comfortable stretch — the single best point of a softmax plateau is noise.
  */
-function loopComputeBand(model, ids, sens) {
+function loopComputeBand(model, ids, sens, enc) {
   const s = Object.assign({}, sens);
   let run = null, best = null;
   for (let t = 12; t <= 30.001; t += 0.25) {
     s.ta = t;
     s.tw = sens.tw + (t - sens.ta) * 0.85;
-    const p = model.forward(encodeState(s, ids), false);
+    const p = model.forward(enc ? enc(s) : encodeState(s, ids), false);
     if (argmax(p) === CLASS_INDEX.comf) {
       const w = p[CLASS_INDEX.comf];
       if (!run) run = { lo: t, hi: t, n: 1, wsum: w, tsum: w * t, peak: w };
@@ -93,7 +93,7 @@ function loopMinute(model, ids, opt) {
   loop.minutes++;
 
   const sens = sensorState(s, 0.3);                    // live sensors are a bit noisy
-  const probs = model.forward(encodeState(sens, ids), false);
+  const probs = model.forward(opt.enc ? opt.enc(sens) : encodeState(sens, ids), false);
 
   // refresh the learned comfort band every few minutes (it moves slowly).
   // An empty room is a state nobody ever votes in, so the network knows
@@ -103,7 +103,7 @@ function loopMinute(model, ids, opt) {
   loop.empty = s.occ.n === 0;
   if (loop.mode === 'nn' && loop.bandAge >= 5) {
     const scanSens = loop.empty ? Object.assign({}, sens, { mov: 0.35 }) : sens;
-    loop.band = loopComputeBand(model, ids, scanSens);
+    loop.band = loopComputeBand(model, ids, scanSens, opt.enc);
     loop.bandAge = 0;
   }
 

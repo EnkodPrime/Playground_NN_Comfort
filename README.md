@@ -90,12 +90,26 @@ wanders — random setpoints, slow power sweeps — so the room visits shivering
 overheating across the whole year. The collector is curious about what it lacks: short of
 "too warm" votes it overheats on purpose until every class holds a fair share.
 
-## The network
+## The networks
 
-A fully connected MLP written from scratch in `js/nn.js` — forward, backprop, Adam, softmax and
-cross-entropy over plain `Float32Array`s. 1–4 hidden layers of 1–10 units, ReLU / Tanh /
-Leaky ReLU / Sigmoid, L2 if you want it. The default 2×6 network has 129 parameters and learns
-the zone in a couple of hundred epochs.
+Two architectures share the data, the map and the control loop, switchable at the top of the page:
+
+* **Dense · snapshot** — a fully connected MLP on one moment's sensor readings. 1–4 hidden
+  layers of 1–10 units; the default 2×6 network has 129 parameters.
+* **1D CNN · last hour** — the convolutional architecture of the sibling signal playground,
+  given several input channels: every vote carries the last ~64 minutes of every sensor as a
+  multi-channel window, and 1–3 layers of sliding kernels read rises, falls and recent activity
+  before a global average pool feeds the vote.
+
+The distinction is not cosmetic, because comfort has **memory**: the generating model gives the
+body a ~20-minute metabolic inertia (what counts is the activity of the last quarter hour, not
+this second), and the datasets contain moments where someone just sat down or the room is
+mid-warm-up. A snapshot network cannot represent those — the window network can, and wins
+exactly there.
+
+Everything is written from scratch in `js/nn.js` — dense and 1D convolutional layers, forward,
+backprop, Adam, softmax and cross-entropy over plain `Float32Array`s, gradients verified against
+numeric differences.
 
 Every node in the diagram is drawn the TensorFlow-Playground way: its response over the two
 features chosen as the comfort-map axes, all other sensors pinned at the probe. Clicking a node

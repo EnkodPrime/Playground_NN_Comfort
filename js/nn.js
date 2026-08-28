@@ -182,14 +182,14 @@ class MLP {
     return loss / idx.length;
   }
 
-  /** Evaluates a dataset: loss, accuracy and the confusion matrix. */
-  evaluate(ds, nClasses, limit) {
-    const n = Math.min(ds.n, limit || ds.n);
+  /** Evaluates examples X (arrays of inputs): loss, accuracy, confusion. */
+  evaluate(X, ys, nClasses, limit) {
+    const n = Math.min(X.length, limit || X.length);
     let loss = 0, correct = 0;
     const conf = new Int32Array(nClasses * nClasses);
     for (let i = 0; i < n; i++) {
-      const p = this.forward(ds.xs[i], false);
-      const y = ds.ys[i];
+      const p = this.forward(X[i], false);
+      const y = ys[i];
       loss += -Math.log(Math.max(1e-9, p[y]));
       let arg = 0;
       for (let c = 1; c < p.length; c++) if (p[c] > p[arg]) arg = c;
@@ -212,3 +212,154 @@ function argmax(p) {
   for (let i = 1; i < p.length; i++) if (p[i] > p[a]) a = i;
   return a;
 }
+
+/* =================================================================== 1D CNN
+ * Ported from Playground_NN_architectures and given several input channels:
+ * there the one channel was mains voltage, here every sensor is a channel and
+ * the window is the last hour of the room's story.
+ */
+class Conv1D {
+  constructor(cin, cout, k) {
+    this.type = 'conv';
+    this.cin = cin; this.cout = cout; this.k = k;
+    this.pad = (k - 1) >> 1;                 // 'same' zero padding
+    this.W = new Float32Array(cout * cin * k);
+    this.b = new Float32Array(cout);
+    heInit(this.W, cin * k);
+    this.gW = new Float32Array(this.W.length);
+    this.gb = new Float32Array(cout);
+    this.mW = new Float32Array(this.W.length);
+    this.vW = new Float32Array(this.W.length);
+    this.mb = new Float32Array(cout);
+    this.vb = new Float32Array(cout);
+  }
+  forward(x, L) {
+    this.x = x; this.L = L;
+    const { cin, cout, k, W, b, pad } = this;
+    const out = new Float32Array(cout * L);
+    for (let co = 0; co < cout; co++) {
+      const ob = co * L;
+      for (let t = 0; t < L; t++) out[ob + t] = b[co];
+      for (let ci = 0; ci < cin; ci++) {
+        const wb = (co * cin + ci) * k;
+        const xb = ci * L;
+        for (let j = 0; j < k; j++) {
+          const w = W[wb + j];
+          if (w === 0) continue;
+          const shift = j - pad;
+          const tS = Math.max(0, -shift), tE = Math.min(L, L - shift);
+          for (let t = tS; t < tE; t++) out[ob + t] += w * x[xb + t + shift];
+        }
+      }
+    }
+    return out;
+  }
+  backward(dout) {
+    const { cin, cout, k, W, gW, gb, x, L, pad } = this;
+    const dx = new Float32Array(cin * L);
+    for (let co = 0; co < cout; co++) {
+      const ob = co * L;
+      let sb = 0;
+      for (let t = 0; t < L; t++) sb += dout[ob + t];
+      gb[co] += sb;
+      for (let ci = 0; ci < cin; ci++) {
+        const wb = (co * cin + ci) * k;
+        const xb = ci * L;
+        for (let j = 0; j < k; j++) {
+          const shift = j - pad;
+          const tS = Math.max(0, -shift), tE = Math.min(L, L - shift);
+          let acc = 0;
+          const w = W[wb + j];
+          for (let t = tS; t < tE; t++) {
+            const d = dout[ob + t];
+            acc += d * x[xb + t + shift];
+            dx[xb + t + shift] += d * w;
+          }
+          gW[wb + j] += acc;
+        }
+      }
+    }
+    return dx;
+  }
+}
+
+class GlobalAvgPool {
+  constructor() { this.type = 'gap'; }
+  forward(x, L) {
+    const C = x.length / L;
+    this.C = C; this.L = L;
+    const out = new Float32Array(C);
+    for (let c = 0; c < C; c++) {
+      let s = 0;
+      for (let t = 0; t < L; t++) s += x[c * L + t];
+      out[c] = s / L;
+    }
+    return out;
+  }
+  backward(dout) {
+    const dx = new Float32Array(this.C * this.L);
+    for (let c = 0; c < this.C; c++) {
+      const g = dout[c] / this.L;
+      for (let t = 0; t < this.L; t++) dx[c * this.L + t] = g;
+    }
+    return dx;
+  }
+}
+
+class ConvNet1D {
+  /** @param {{channels:number, T:number, layers:{filters:number,kernel:number}[],
+   *          activation:string, nClasses:number}} cfg */
+  constructor(cfg) {
+    this.kind = 'cnn';
+    this.cfg = JSON.parse(JSON.stringify(cfg));
+    this.build();
+    this.t = 0;
+  }
+  build() {
+    const cfg = this.cfg;
+    this.convs = [];
+    this.actsL = [];
+    let cin = cfg.channels;
+    cfg.layers.forEach((ls) => {
+      this.convs.push(new Conv1D(cin, ls.filters, ls.kernel || 5));
+      this.actsL.push(new Activation(cfg.activation));
+      cin = ls.filters;
+    });
+    this.gap = new GlobalAvgPool();
+    this.out = new Dense(cin, cfg.nClasses);
+    this.params = [...this.convs, this.out];
+  }
+  /** With keepActs=true, this.acts[l] holds layer l's activation maps. */
+  forward(x, keepActs) {
+    const T = this.cfg.T;
+    if (keepActs) { this.acts = []; this.input = x; }
+    let a = x;
+    for (let l = 0; l < this.convs.length; l++) {
+      a = this.actsL[l].forward(this.convs[l].forward(a, T));
+      if (keepActs) this.acts.push(a);
+    }
+    this.embedding = this.gap.forward(a, T);
+    this.logits = this.out.forward(this.embedding);
+    return this.softmax(this.logits);
+  }
+  backward(probs, target) {
+    const d = new Float32Array(probs.length);
+    for (let i = 0; i < probs.length; i++) d[i] = probs[i];
+    d[target] -= 1;
+    let g = this.out.backward(d);
+    g = this.gap.backward(g);
+    for (let l = this.convs.length - 1; l >= 0; l--) {
+      g = this.actsL[l].backward(g);
+      g = this.convs[l].backward(g);
+    }
+    return -Math.log(Math.max(1e-9, probs[target]));
+  }
+}
+// softmax, Adam step, batching, evaluation and parameter count are identical
+// to the MLP's — share them
+ConvNet1D.prototype.softmax = MLP.prototype.softmax;
+ConvNet1D.prototype.zeroGrads = MLP.prototype.zeroGrads;
+ConvNet1D.prototype.step = MLP.prototype.step;
+ConvNet1D.prototype.trainBatch = MLP.prototype.trainBatch;
+ConvNet1D.prototype.evaluate = MLP.prototype.evaluate;
+ConvNet1D.prototype.paramCount = MLP.prototype.paramCount;

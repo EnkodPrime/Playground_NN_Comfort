@@ -30,6 +30,12 @@ const FEATURES = [
 const FEAT_INDEX = {};
 FEATURES.forEach((f, i) => (FEAT_INDEX[f.id] = i));
 
+/* The 1D-CNN view of the data: every vote also carries a short HISTORY —
+ * the last hour of every sensor channel, sampled every couple of minutes.
+ * A snapshot cannot see that someone was active ten minutes ago; a window can. */
+const WIN_T = 32;        // samples per window
+const WIN_STRIDE = 2;    // simulated minutes between samples (≈64 min of history)
+
 /** Encoded width of one feature: 2 for a sin/cos pair, 1 otherwise. */
 function featWidth(f) { return f.cyc ? 2 : 1; }
 
@@ -72,6 +78,34 @@ function encodeState(s, ids) {
   return x;
 }
 
+/**
+ * A window of constant conditions — the steady-state assumption used whenever
+ * only a single moment is known (map cells, probe, quick test). Channels are
+ * flat except the clock, which ticks backwards into the past.
+ * Layout matches the sibling project: flat array indexed [channel*T + t].
+ */
+function flatWindow(s, ids) {
+  const C = encodedDim(ids);
+  const out = new Float32Array(C * WIN_T);
+  const st = Object.assign({}, s);
+  for (let t = 0; t < WIN_T; t++) {
+    st.hour = (s.hour - (WIN_T - 1 - t) * WIN_STRIDE / 60 + 24) % 24;
+    const v = encodeState(st, ids);
+    for (let c = 0; c < C; c++) out[c * WIN_T + t] = v[c];
+  }
+  return out;
+}
+
+/** Packs a list of per-step encoded vectors (oldest first) into a window. */
+function packWindow(cols, C) {
+  const out = new Float32Array(C * WIN_T);
+  for (let t = 0; t < WIN_T; t++) {
+    const v = cols[t];
+    for (let c = 0; c < C; c++) out[c * WIN_T + t] = v[c];
+  }
+  return out;
+}
+
 /* ------------------------------------------------- dataset generation */
 
 /** A random day of the year within the chosen coverage. */
@@ -95,7 +129,8 @@ function pickDoy(coverage) {
  *          balance:boolean, insulation:number, pmax:number, heater:string}} opt
  */
 function makeDataset(n, ids, opt) {
-  const xs = [], ys = [], states = [], pmvs = [];
+  const xs = [], ys = [], states = [], pmvs = [], ws = [];
+  const C = encodedDim(ids);
   const counts = [0, 0, 0];
   // votes of every kind are needed: a room that was never overheated cannot
   // teach the warm edge of the zone, so collection keeps simulating until each
@@ -116,6 +151,7 @@ function makeDataset(n, ids, opt) {
     let setp = needWarm ? rand(26, 31) : needCold ? rand(11, 15) : rand(12, 31);
     let u = Math.random(), phase = rand(0, 6.28);
     const minutes = 1440;
+    const hist = [];                       // rolling encoded channel history
     for (let m = 0; m < minutes && !enough(); m += 2) {
       if (mode === 'setpoint') {
         if (!needWarm && !needCold && Math.random() < 0.0015) setp = rand(12, 31); // new target now and then
@@ -130,9 +166,12 @@ function makeDataset(n, ids, opt) {
       }
       simStep(sim, u); simStep(sim, u);                       // 2-minute stride
       const sens = sensorState(sim, opt.sensorNoise);
+      hist.push(encodeState(sens, ids));
+      if (hist.length > WIN_T) hist.shift();
       const v = simMaybeVote(sim, opt.pref, opt.sigma, sens);
-      if (v) {
-        xs.push(encodeState(v.state, ids));
+      if (v && hist.length === WIN_T) {
+        xs.push(hist[WIN_T - 1]);
+        ws.push(packWindow(hist, C));
         ys.push(v.label);
         states.push(v.state);
         pmvs.push(v.pmv);
@@ -141,11 +180,11 @@ function makeDataset(n, ids, opt) {
     }
   }
 
-  return finishDataset(xs, ys, states, pmvs, opt.balance);
+  return finishDataset(xs, ys, states, pmvs, opt.balance, ws);
 }
 
 /** Shared tail of every dataset: optional class balancing and a shuffle. */
-function finishDataset(xs, ys, states, pmvs, balance) {
+function finishDataset(xs, ys, states, pmvs, balance, ws) {
   // class balancing: duplicate minority votes until the classes match
   if (balance) {
     const byClass = [[], [], []];
@@ -156,6 +195,7 @@ function finishDataset(xs, ys, states, pmvs, balance) {
       for (let k = idxs.length; k < most; k++) {
         const i = idxs[Math.floor(Math.random() * idxs.length)];
         xs.push(xs[i]); ys.push(ys[i]); states.push(states[i]); pmvs.push(pmvs[i]);
+        ws.push(ws[i]);
       }
     });
   }
@@ -166,8 +206,9 @@ function finishDataset(xs, ys, states, pmvs, balance) {
     [ys[i], ys[j]] = [ys[j], ys[i]];
     [states[i], states[j]] = [states[j], states[i]];
     [pmvs[i], pmvs[j]] = [pmvs[j], pmvs[i]];
+    [ws[i], ws[j]] = [ws[j], ws[i]];
   }
-  return { xs, ys, states, pmvs, n: xs.length };
+  return { xs, ys, states, pmvs, ws, n: xs.length };
 }
 
 /**
@@ -182,7 +223,8 @@ function finishDataset(xs, ys, states, pmvs, balance) {
  * is what keeps the hidden dimensions from smearing the labels into noise.
  */
 function makeUniformDataset(n, ids, opt) {
-  const xs = [], ys = [], states = [], pmvs = [];
+  const xs = [], ys = [], states = [], pmvs = [], ws = [];
+  const C = encodedDim(ids);
   const active = {};
   ids.forEach((id) => (active[id] = true));
   const F = {};
@@ -204,23 +246,46 @@ function makeUniformDataset(n, ids, opt) {
       tw: active.tw ? rand(F.tw.min, F.tw.max) : ta - rand(0.3, 1.4),
       rh: active.rh ? rand(F.rh.min, F.rh.max) : clamp(48 - 0.8 * (ta - 21) + 4 * randn(), 25, 70),
     };
-    // the sensors report the moment imperfectly, same as in the simulation
-    const m = {
-      ta: s.ta + 0.15 * k * randn(),
-      rh: clamp(s.rh + 2.0 * k * randn(), 10, 100),
-      tw: s.tw + 0.2 * k * randn(),
-      tout: s.tout + 0.3 * k * randn(),
-      hour: s.hour, doy: s.doy,
-      mov: clamp(s.mov + 0.02 * k * randn(), 0, 1),
-      vair: Math.max(0, s.vair + 0.015 * k * randn()),
-    };
+
+    // the last hour is a small STORY, not always a still photograph: sometimes
+    // the person just changed activity, sometimes the room is mid-warm-up —
+    // the moments where history genuinely changes the answer
+    const movStep = Math.random() < 0.4;
+    const movFrom = movStep ? (asleep && !active.mov ? rand(0.25, 0.7) : rand(0, 1)) : s.mov;
+    const movT0 = movStep ? randInt(4, WIN_T - 2) : 0;
+    const taRamp = Math.random() < 0.35 ? rand(-2.5, 2.5) : 0;
+
+    const cols = [];
+    let movEma = movFrom;
+    let m = null;
+    for (let t = 0; t < WIN_T; t++) {
+      const f = t / (WIN_T - 1);
+      const movT = movStep && t >= movT0 ? s.mov : movFrom;
+      movEma += (movT - movEma) * (WIN_STRIDE / 20);   // the body's ~20-min memory
+      const taT = s.ta - taRamp * (1 - f);
+      const st = {
+        ta: taT + 0.15 * k * randn(),
+        rh: clamp(s.rh - 0.8 * (taT - s.ta) + 2.0 * k * randn(), 10, 100),
+        tw: s.tw + 0.6 * (taT - s.ta) + 0.2 * k * randn(),
+        tout: s.tout + 0.3 * k * randn(),
+        hour: (s.hour - (WIN_T - 1 - t) * WIN_STRIDE / 60 + 24) % 24,
+        doy: s.doy,
+        mov: clamp(movT + 0.02 * k * randn(), 0, 1),
+        vair: Math.max(0, s.vair + 0.015 * k * randn()),
+      };
+      cols.push(encodeState(st, ids));
+      if (t === WIN_T - 1) m = st;
+    }
+    m.movEff = movEma;                     // what the voter's body actually feels
+
     const v = voteSample(m, opt.pref, opt.sigma);
-    xs.push(encodeState(m, ids));
+    xs.push(cols[WIN_T - 1]);
+    ws.push(packWindow(cols, C));
     ys.push(v.label);
     states.push(m);
     pmvs.push(v.pmv);
   }
-  return finishDataset(xs, ys, states, pmvs, opt.balance);
+  return finishDataset(xs, ys, states, pmvs, opt.balance, ws);
 }
 
 /**

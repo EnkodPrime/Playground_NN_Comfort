@@ -63,6 +63,46 @@ function probColor(p, hex) {
   return 'rgb(' + Math.round(255 + (r - 255) * t) + ',' + Math.round(255 + (g - 255) * t) + ',' + Math.round(255 + (b - 255) * t) + ')';
 }
 
+/** Filled curve around zero: orange above, blue below — a signal in a box.
+ * Ported from the sibling signal playground. */
+function drawWave(ctx, x, y, w, h, data, off, len, scale) {
+  const mid = y + h / 2;
+  const sc = scale > 1e-6 ? scale : 1e-6;
+  const px = (i) => x + (len <= 1 ? 0 : (i * (w - 1)) / (len - 1));
+  const py = (v) => mid - Math.max(-1.15, Math.min(1.15, v / sc)) * (h / 2 - 1);
+  ctx.strokeStyle = AXIS;
+  ctx.lineWidth = 0.6;
+  ctx.beginPath(); ctx.moveTo(x, mid); ctx.lineTo(x + w, mid); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(px(0), mid);
+  for (let i = 0; i < len; i++) ctx.lineTo(px(i), py(data[off + i]));
+  ctx.lineTo(px(len - 1), mid);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, y, 0, y + h);
+  grad.addColorStop(0, POS + '55');
+  grad.addColorStop(0.5, POS + '18');
+  grad.addColorStop(0.5, NEG + '18');
+  grad.addColorStop(1, NEG + '55');
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.beginPath();
+  for (let i = 0; i < len; i++) {
+    const X = px(i), Y = py(data[off + i]);
+    if (i === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+  }
+  ctx.strokeStyle = '#31404e';
+  ctx.lineWidth = 1.05;
+  ctx.stroke();
+}
+
+/** Σ|W| of one channel→filter connection, for link thickness. */
+function convLinkStrength(conv, co, ci) {
+  let sum = 0;
+  const wb = (co * conv.cin + ci) * conv.k;
+  for (let j = 0; j < conv.k; j++) sum += Math.abs(conv.W[wb + j]);
+  return sum;
+}
+
 /* ------------------------------------------------------------ Layout */
 const IN_W = 44, IN_H = 34, HID_W = 48, HID_H = 44, OUT_W = 52, OUT_H = 44;
 const NODE_VGAP = 11, LABEL_W = 96, OUT_LABEL_W = 96, COL_GAP = 86;
@@ -74,13 +114,15 @@ const NODE_VGAP = 11, LABEL_W = 96, OUT_LABEL_W = 96, COL_GAP = 86;
  */
 function layoutNetwork(model, inNames, cssW) {
   const cols = [];
-  const nIn = model.cfg.inputDim;
+  const cnn = model.kind === 'cnn';
+  const nIn = cnn ? model.cfg.channels : model.cfg.inputDim;
+  const hidden = cnn ? model.cfg.layers.map((l) => l.filters) : model.cfg.hidden;
   const inNodes = [];
-  for (let i = 0; i < nIn; i++) inNodes.push({ w: IN_W, h: IN_H, unit: i });
+  for (let i = 0; i < nIn; i++) inNodes.push({ w: cnn ? 58 : IN_W, h: IN_H, unit: i });
   cols.push({ kind: 'in', nodes: inNodes });
-  model.cfg.hidden.forEach((units, li) => {
+  hidden.forEach((units, li) => {
     const nodes = [];
-    for (let u = 0; u < units; u++) nodes.push({ w: HID_W, h: HID_H, layer: li, unit: u });
+    for (let u = 0; u < units; u++) nodes.push({ w: cnn ? 62 : HID_W, h: cnn ? 38 : HID_H, layer: li, unit: u });
     cols.push({ kind: 'hid', layer: li, nodes });
   });
   const outNodes = [];
@@ -133,8 +175,45 @@ function drawNetwork(ctx, o) {
   const emph = sel || hov;                          // node whose links stand out
 
   // ------------------------------------------------ links
-  const denses = [...model.denses, model.out];
-  denses.forEach((d, di) => {
+  const cnn = model.kind === 'cnn';
+  if (!cnn) {
+    const denses = [...model.denses, model.out];
+    denses.forEach((d, di) => {
+      const from = cols[di], to = cols[di + 1];
+      const mx = denseMaxAbs(d);
+      for (let j = 0; j < to.nodes.length; j++) {
+        for (let i = 0; i < from.nodes.length; i++) {
+          const w = d.W[j * d.nin + i];
+          const a = Math.abs(w) / mx;
+          if (a < 0.02) continue;
+          const hot = emph && ((emphMatches(emph, di, i, cols)) || (emphMatches(emph, di + 1, j, cols)));
+          drawLink(ctx, from.nodes[i], to.nodes[j], a, w, hot, !!emph);
+        }
+      }
+    });
+  } else {
+    // conv links: thickness is the total kernel weight of that channel
+    model.convs.forEach((conv, di) => {
+      const from = cols[di], to = cols[di + 1];
+      let mx = 1e-6;
+      for (let co = 0; co < conv.cout; co++)
+        for (let ci = 0; ci < conv.cin; ci++) mx = Math.max(mx, convLinkStrength(conv, co, ci));
+      for (let co = 0; co < conv.cout; co++) {
+        for (let ci = 0; ci < conv.cin; ci++) {
+          const sum = convLinkStrength(conv, co, ci);
+          const a = sum / mx;
+          if (a < 0.05) continue;
+          // sign of the largest tap decides the colour
+          let big = 0;
+          const wb = (co * conv.cin + ci) * conv.k;
+          for (let j = 0; j < conv.k; j++) if (Math.abs(conv.W[wb + j]) > Math.abs(big)) big = conv.W[wb + j];
+          const hot = emph && ((emphMatches(emph, di, ci, cols)) || (emphMatches(emph, di + 1, co, cols)));
+          drawLink(ctx, from.nodes[ci], to.nodes[co], a, big, hot, !!emph);
+        }
+      }
+    });
+    const d = model.out;
+    const di = model.convs.length;
     const from = cols[di], to = cols[di + 1];
     const mx = denseMaxAbs(d);
     for (let j = 0; j < to.nodes.length; j++) {
@@ -146,12 +225,14 @@ function drawNetwork(ctx, o) {
         drawLink(ctx, from.nodes[i], to.nodes[j], a, w, hot, !!emph);
       }
     }
-  });
+  }
 
   // ------------------------------------------------ column titles
-  label(ctx, cols[0].x, 14, 'Sensors (' + model.cfg.inputDim + ' inputs)');
+  label(ctx, cols[0].x, 14, cnn
+    ? 'Channels · last ' + Math.round(o.winT * 2) + ' min'
+    : 'Sensors (' + model.cfg.inputDim + ' inputs)');
   cols.forEach((col) => {
-    if (col.kind === 'hid') label(ctx, col.x - 6, 14, 'Hidden ' + (col.layer + 1));
+    if (col.kind === 'hid') label(ctx, col.x - 6, 14, (cnn ? 'Conv ' : 'Hidden ') + (col.layer + 1));
   });
   label(ctx, cols[cols.length - 1].x - 4, 14, 'Vote');
 
@@ -159,7 +240,12 @@ function drawNetwork(ctx, o) {
   cols[0].nodes.forEach((nd, i) => {
     const hot = isHover(hov, 'in', 0, i), selHot = isSel(sel, 'in', 0, i);
     drawNodeBox(ctx, nd, hot, selHot);
-    if (o.grids && o.grids.inputs[i]) drawGrid(ctx, nd, o.grids.inputs[i], heatColor);
+    if (cnn && o.window) {
+      let mx = 0.4;
+      for (let t = 0; t < o.winT; t++) mx = Math.max(mx, Math.abs(o.window[i * o.winT + t]));
+      drawWave(ctx, nd.x + 2, nd.y + 2, nd.w - 4, nd.h - 4, o.window, i * o.winT, o.winT, mx);
+    }
+    else if (o.grids && o.grids.inputs[i]) drawGrid(ctx, nd, o.grids.inputs[i], heatColor);
     // name and current encoded value to the left
     ctx.fillStyle = '#5b6873';
     ctx.font = '10px system-ui,sans-serif';
@@ -177,6 +263,13 @@ function drawNetwork(ctx, o) {
     col.nodes.forEach((nd, u) => {
       const hot = isHover(hov, 'hid', col.layer, u), selHot = isSel(sel, 'hid', col.layer, u);
       drawNodeBox(ctx, nd, hot, selHot);
+      if (cnn && o.acts && o.acts[col.layer]) {
+        const a = o.acts[col.layer];
+        let mx = 1e-6;
+        for (let t = 0; t < o.winT; t++) mx = Math.max(mx, Math.abs(a[u * o.winT + t]));
+        drawWave(ctx, nd.x + 2, nd.y + 2, nd.w - 4, nd.h - 4, a, u * o.winT, o.winT, mx);
+        return;
+      }
       const g = o.grids && o.grids.hidden[col.layer] && o.grids.hidden[col.layer][u];
       if (g) {
         // each unit scaled by its own maximum — ReLU outputs would otherwise
@@ -185,7 +278,7 @@ function drawNetwork(ctx, o) {
         for (let k = 0; k < g.length; k++) mx = Math.max(mx, Math.abs(g[k]));
         drawGrid(ctx, nd, g, (v) => heatColor(1.5 * v / mx));
       }
-      if (o.acts && o.acts[col.layer]) {
+      if (!cnn && o.acts && o.acts[col.layer]) {
         markProbe(ctx, nd, o.axisInfo);
       }
     });

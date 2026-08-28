@@ -41,7 +41,30 @@ function mapEvalNet(model, ids, probe, fx, fy) {
       p[gy * MAP_GX + gx] = pr[a];
     }
   }
-  return { cls, p };
+  return { cls, p, gx: MAP_GX, gy: MAP_GY };
+}
+
+/**
+ * Same slice for the 1D CNN: every cell becomes a steady-state window. A
+ * convolution over 32 timepoints costs far more than one dense pass, so the
+ * grid is coarser — the bilinear upscale hides the difference.
+ */
+function mapEvalNetWin(model, ids, probe, fx, fy) {
+  const GX = 56, GY = 40;
+  const cls = new Uint8Array(GX * GY);
+  const p = new Float32Array(GX * GY);
+  const s = Object.assign({}, probe);
+  for (let gy = 0; gy < GY; gy++) {
+    s[fy.id] = axisValue(fy, gy / (GY - 1));
+    for (let gx = 0; gx < GX; gx++) {
+      s[fx.id] = axisValue(fx, gx / (GX - 1));
+      const pr = model.forward(flatWindow(s, ids), false);
+      const a = argmax(pr);
+      cls[gy * GX + gx] = a;
+      p[gy * GX + gx] = pr[a];
+    }
+  }
+  return { cls, p, gx: GX, gy: GY };
 }
 
 /** The true vote over the plane — same slice through the PMV model. In
@@ -74,16 +97,16 @@ function drawComfortMap(ctx, w, h, o) {
   // browser's bilinear smoothing, so the boundary reads as a surface rather
   // than a mosaic of grid cells
   if (net) {
-    if (!_mapOff) {
+    if (!_mapOff || _mapOff.width !== net.gx || _mapOff.height !== net.gy) {
       _mapOff = document.createElement('canvas');
-      _mapOff.width = MAP_GX; _mapOff.height = MAP_GY;
+      _mapOff.width = net.gx; _mapOff.height = net.gy;
     }
     const octx = _mapOff.getContext('2d');
-    const img = octx.createImageData(MAP_GX, MAP_GY);
-    for (let gy = 0; gy < MAP_GY; gy++) {
-      const row = (MAP_GY - 1 - gy) * MAP_GX;       // grid row 0 is the bottom
-      for (let gx = 0; gx < MAP_GX; gx++) {
-        const i = gy * MAP_GX + gx;
+    const img = octx.createImageData(net.gx, net.gy);
+    for (let gy = 0; gy < net.gy; gy++) {
+      const row = (net.gy - 1 - gy) * net.gx;       // grid row 0 is the bottom
+      for (let gx = 0; gx < net.gx; gx++) {
+        const i = gy * net.gx + gx;
         const conf = (net.p[i] - 1 / 3) / (2 / 3);
         const t = 0.10 + 0.72 * Math.max(0, Math.min(1, conf));
         const c = _CLS_RGB[net.cls[i]];

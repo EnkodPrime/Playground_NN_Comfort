@@ -3,7 +3,9 @@
 const state = {
   // the default is the cleanest experiment: two inputs, controlled study
   features: { ta: true, rh: false, tw: false, tout: false, hour: true, doy: false, mov: false, vair: false },
+  arch: 'mlp',         // 'mlp' — snapshot; 'cnn' — 1D convolution over the last hour
   hidden: [6, 6],
+  cnnLayers: [{ filters: 4, kernel: 5 }, { filters: 4, kernel: 5 }],
   activation: 'relu',
   lr: 0.003,
   l2: 0,
@@ -49,6 +51,12 @@ let pf = null;             // forward pass at the probe (activations for the ari
 const $ = (id) => document.getElementById(id);
 
 function activeIds() { return FEATURES.map((f) => f.id).filter((id) => state.features[id]); }
+/** The training/eval input array matching the current architecture. */
+function dataX(ds) { return state.arch === 'cnn' ? ds.ws : ds.xs; }
+/** Encodes one moment the way the current architecture expects it. */
+function encProbe(s) {
+  return state.arch === 'cnn' ? flatWindow(s, activeIds()) : encodeState(s, activeIds());
+}
 function featX() { return FEATURES[FEAT_INDEX[state.mapX]]; }
 function featY() { return FEATURES[FEAT_INDEX[state.mapY]]; }
 
@@ -112,21 +120,42 @@ function renderCounts() {
 /* ------------------------------------------------------------- model */
 function rebuildModel() {
   const ids = activeIds();
-  model = new MLP({
-    inputDim: encodedDim(ids),
-    hidden: state.hidden.slice(),
-    activation: state.activation,
-    nClasses: CLASSES.length,
-  });
+  if (state.arch === 'cnn') {
+    model = new ConvNet1D({
+      channels: encodedDim(ids),
+      T: WIN_T,
+      layers: JSON.parse(JSON.stringify(state.cnnLayers)),
+      activation: state.activation,
+      nClasses: CLASSES.length,
+    });
+  } else {
+    model = new MLP({
+      inputDim: encodedDim(ids),
+      hidden: state.hidden.slice(),
+      activation: state.activation,
+      nClasses: CLASSES.length,
+    });
+  }
   state.epoch = 0; state.stopAt = null;
   hTrain = []; hTest = [];
   state.selected = null; state.hover = null;
   markTrained(); mapDrawDirty = true;
-  $('layCount').textContent = state.hidden.length;
+  $('layerLbl').textContent = state.arch === 'cnn' ? 'Conv layers' : 'Hidden layers';
+  $('layCount').textContent = state.arch === 'cnn' ? state.cnnLayers.length : state.hidden.length;
   $('paramCount').textContent = model.paramCount().toLocaleString('en-US') + ' parameters';
   buildLayerControls();
   $('qtResult').innerHTML = '';        // that score belonged to the old weights
   evaluate(); renderMetrics(); renderRunTarget(); renderMath(true);
+}
+
+function setArch(a) {
+  state.arch = a;
+  document.body.classList.toggle('arch-cnn', a === 'cnn');
+  document.body.classList.toggle('arch-mlp', a === 'mlp');
+  $('archMlp').classList.toggle('on', a === 'mlp');
+  $('archCnn').classList.toggle('on', a === 'cnn');
+  setRunning(false);
+  rebuildModel();
 }
 
 /* ---------------------------------------------------------- training */
@@ -134,7 +163,7 @@ function trainOneBatch() {
   const B = state.batch;
   const idx = new Array(B);
   for (let i = 0; i < B; i++) idx[i] = Math.floor(Math.random() * train.n);
-  model.trainBatch(train.xs, train.ys, idx, state.lr, state.l2);
+  model.trainBatch(dataX(train), train.ys, idx, state.lr, state.l2);
   state.epoch += B / train.n;
 }
 
@@ -174,8 +203,10 @@ function renderRunTarget() {
 }
 
 function evaluate() {
-  const a = model.evaluate(train, 3, 300);
-  const b = model.evaluate(test, 3, 500);
+  // a convolution pass over 32 timepoints costs ~50× a dense pass — sample less
+  const la = state.arch === 'cnn' ? 120 : 300, lb = state.arch === 'cnn' ? 200 : 500;
+  const a = model.evaluate(dataX(train), train.ys, 3, la);
+  const b = model.evaluate(dataX(test), test.ys, 3, lb);
   lastMetrics = { train: a, test: b };
   hTrain.push(a.loss); hTest.push(b.loss);
   if (hTrain.length > 320) { hTrain.shift(); hTest.shift(); }
@@ -225,17 +256,20 @@ function mainLoop() {
 }
 
 function loopOpt() {
-  return { pref: state.pref, sigma: state.sigma, onVote: onLiveVote };
+  return { pref: state.pref, sigma: state.sigma, onVote: onLiveVote, enc: encProbe };
 }
 
 /** Online learning: a live vote becomes a training example on the spot. */
 function onLiveVote(v) {
   const ids = activeIds();
   train.xs.push(encodeState(v.state, ids));
+  train.ws.push(flatWindow(v.state, ids));
   train.ys.push(v.label);
   train.states.push(v.state);
   train.pmvs.push(v.pmv);
-  if (train.xs.length > 4000) { train.xs.shift(); train.ys.shift(); train.states.shift(); train.pmvs.shift(); }
+  if (train.xs.length > 4000) {
+    train.xs.shift(); train.ws.shift(); train.ys.shift(); train.states.shift(); train.pmvs.shift();
+  }
   train.n = train.xs.length;
   for (let k = 0; k < 6; k++) trainOneBatch();     // a short burst of learning
   markTrained();
@@ -251,6 +285,24 @@ function onLiveVote(v) {
 function computeGrids() {
   const ids = activeIds();
   const fx = featX(), fy = featY();
+  if (state.arch === 'cnn') {
+    // filters are drawn as curves at the probe; only the class nodes get maps
+    const g = { inputs: [], hidden: [], outputs: [] };
+    for (let c = 0; c < CLASSES.length; c++) g.outputs.push(new Float32Array(GRES * GRES));
+    const s = Object.assign({}, state.probe);
+    for (let gy = 0; gy < GRES; gy++) {
+      s[fy.id] = axisValue(fy, gy / (GRES - 1));
+      for (let gx = 0; gx < GRES; gx++) {
+        s[fx.id] = axisValue(fx, gx / (GRES - 1));
+        const p = model.forward(flatWindow(s, ids), false);
+        const cell = gy * GRES + gx;
+        for (let c = 0; c < CLASSES.length; c++) g.outputs[c][cell] = p[c];
+      }
+    }
+    grids = g;
+    gridsDirty = false;
+    return;
+  }
   const nIn = model.cfg.inputDim;
   const g = {
     inputs: [], hidden: model.cfg.hidden.map((u) => []), outputs: [],
@@ -282,9 +334,12 @@ function computeGrids() {
 
 /** Forward pass at the probe itself — activations for readout and arithmetic. */
 function probeForward() {
-  const x = encodeState(state.probe, activeIds());
+  const x = encProbe(state.probe);
   const p = model.forward(x, true);
-  pf = { x, preacts: model.preacts, acts: model.acts, logits: model.logits.slice(), probs: p.slice() };
+  pf = {
+    x, acts: model.acts, logits: model.logits.slice(), probs: p.slice(),
+    preacts: model.preacts, embedding: model.embedding,
+  };
   return pf;
 }
 
@@ -296,13 +351,18 @@ function renderNet() {
   const names = encodedNames(ids);
   layout = layoutNetwork(model, names, cssW);
   netCtx = dpiSetup($('net'), Math.max(cssW, layout.width), layout.height);
-  if (gridsDirty && frameNo % 3 === 0) computeGrids();
+  if (gridsDirty && frameNo % (state.arch === 'cnn' ? 15 : 3) === 0) computeGrids();
   probeForward();
   const fx = featX(), fy = featY();
+  const inVals = state.arch === 'cnn'
+    ? Array.from({ length: encodedDim(activeIds()) }, (_, c) => pf.x[c * WIN_T + WIN_T - 1])
+    : pf.x;
   drawNetwork(netCtx, {
     model, layout, grids,
+    window: state.arch === 'cnn' ? pf.x : null,
+    winT: WIN_T,
     inNames: names,
-    inValues: pf.x,
+    inValues: inVals,
     acts: pf.acts,
     probs: pf.probs,
     hover: state.hover,
@@ -335,7 +395,9 @@ function renderMapMaybe() {
   const slow = busy ? frameNo % 15 === 0 : true;
   let changed = false;
   if (mapNetDirty && slow) {
-    mapNet = mapEvalNet(model, activeIds(), state.probe, featX(), featY());
+    mapNet = state.arch === 'cnn'
+      ? mapEvalNetWin(model, activeIds(), state.probe, featX(), featY())
+      : mapEvalNet(model, activeIds(), state.probe, featX(), featY());
     mapNetDirty = false; changed = true;
   }
   if (mapTruthDirty && slow) {
@@ -467,7 +529,7 @@ function quickTest() {
   for (let i = 0; i < N; i++) {
     const s = quickState(ids);
     const y = comfortTruth(s, state.pref).label;
-    const a = argmax(model.forward(encodeState(s, ids), false));
+    const a = argmax(model.forward(encProbe(s), false));
     per[y][1]++;
     if (a === y) { ok++; per[y][0]++; }
     const c = CLASS_INDEX.comf;
@@ -597,19 +659,27 @@ function buildAxisSelects() {
 function buildLayerControls() {
   const host = $('layerControls');
   host.innerHTML = '';
-  state.hidden.forEach((units, li) => {
+  const cnn = state.arch === 'cnn';
+  const list = cnn ? state.cnnLayers : state.hidden;
+  list.forEach((entry, li) => {
+    const count = cnn ? entry.filters : entry;
     const card = document.createElement('div');
     card.className = 'laycard';
-    card.title = 'Units in this hidden layer. Each unit is one small learned detector; '
-      + 'more units can carve a finer comfort boundary but need more data.';
+    card.title = cnn
+      ? 'Filters in this convolutional layer. Each filter slides one small learned '
+        + 'kernel along the hour of history, looking for a temporal pattern.'
+      : 'Units in this hidden layer. Each unit is one small learned detector; '
+        + 'more units can carve a finer comfort boundary but need more data.';
     card.dataset.layer = li;
-    card.innerHTML = '<div class="row"><button data-a="m">−</button><b>' + units +
-      ' unit' + (units > 1 ? 's' : '') + '</b><button data-a="p">+</button></div>';
+    card.innerHTML = '<div class="row"><button data-a="m">−</button><b>' + count +
+      (cnn ? ' filter' : ' unit') + (count > 1 ? 's' : '') + '</b><button data-a="p">+</button></div>';
     card.querySelector('[data-a=m]').onclick = () => {
-      if (state.hidden[li] > 1) { state.hidden[li]--; rebuildModel(); }
+      if (cnn) { if (entry.filters > 1) { entry.filters--; rebuildModel(); } }
+      else if (state.hidden[li] > 1) { state.hidden[li]--; rebuildModel(); }
     };
     card.querySelector('[data-a=p]').onclick = () => {
-      if (state.hidden[li] < 10) { state.hidden[li]++; rebuildModel(); }
+      if (cnn) { if (entry.filters < 8) { entry.filters++; rebuildModel(); } }
+      else if (state.hidden[li] < 10) { state.hidden[li]++; rebuildModel(); }
     };
     host.appendChild(card);
   });
@@ -660,9 +730,89 @@ function renderMath(force) {
     return;
   }
   if (!pf) probeForward();
+  if (state.arch === 'cnn') {
+    if (sel.kind === 'in') renderChannelMath(host, sel);
+    else if (sel.kind === 'hid') renderFilterMath(host, sel);
+    else renderOutputMath(host, sel);
+    return;
+  }
   if (sel.kind === 'in') renderInputMath(host, sel);
   else if (sel.kind === 'hid') renderHiddenMath(host, sel);
   else renderOutputMath(host, sel);
+}
+
+/* ------------------------------------------------ arithmetic · 1D CNN */
+function renderChannelMath(host, sel) {
+  const meta = encMeta()[sel.unit];
+  const f = meta.f;
+  const raw = state.probe[f.id];
+  const xEnd = pf.x[sel.unit * WIN_T + WIN_T - 1];
+  $('mathTitle').textContent = 'Channel · ' + (meta.comp ? meta.comp + ' ' : '') + f.name;
+  let h = '<h4>One channel of the window</h4>' +
+    '<p class="hint">This channel carries the last ' + Math.round(WIN_T * 2) +
+    ' minutes of <b>' + f.name + '</b>, one encoded value every 2 minutes. ' +
+    'The newest sample (right edge of the box) is:</p>';
+  if (meta.comp) {
+    h += '<div class="formula">x <span class="op">=</span> ' + meta.comp +
+      '(2π · <b>' + fmtFeat(f, raw) + '</b> / ' + f.cyc + ') <span class="op">=</span> ' +
+      '<span class="res">' + n3(xEnd) + '</span></div>';
+  } else {
+    h += '<div class="formula">x <span class="op">=</span> (<b>' + raw.toFixed(f.fmt) + '</b> − ' +
+      f.mean + ') / ' + f.span + ' <span class="op">=</span> <span class="res">' + n3(xEnd) + '</span></div>';
+  }
+  const conv = model.convs[0];
+  h += '<h4>Kernel taps reading this channel — Conv 1</h4>' +
+    '<div class="scrollx"><table class="mtab"><tr><th>filter</th>';
+  for (let j = 0; j < conv.k; j++) h += '<th>t' + (j - (conv.k >> 1)) + '</th>';
+  h += '</tr>';
+  for (let co = 0; co < conv.cout; co++) {
+    h += '<tr><td class="ch">c1·' + (co + 1) + '</td>';
+    const wb = (co * conv.cin + sel.unit) * conv.k;
+    for (let j = 0; j < conv.k; j++) {
+      const w = conv.W[wb + j];
+      h += '<td style="color:' + wColor(w) + '">' + n3(w) + '</td>';
+    }
+    h += '</tr>';
+  }
+  h += '</table></div><p class="hint">Each filter slides these taps along the hour: a pattern like ' +
+    '−,−,+,+ reads "was low, became high" — a rise the snapshot network cannot represent.</p>';
+  host.innerHTML = h;
+}
+
+function renderFilterMath(host, sel) {
+  const li = sel.layer, u = sel.unit;
+  const conv = model.convs[li];
+  const inNames = li === 0
+    ? encodedNames(activeIds())
+    : Array.from({ length: model.cfg.layers[li - 1].filters }, (_, k) => 'c' + li + '·' + (k + 1));
+  $('mathTitle').textContent = 'Filter c' + (li + 1) + '·' + (u + 1);
+  let h = '<h4>The learned kernel — ' + conv.k + ' taps over every input channel</h4>' +
+    '<div class="scrollx"><table class="mtab"><tr><th>input channel</th>';
+  for (let j = 0; j < conv.k; j++) h += '<th>t' + (j - (conv.k >> 1)) + '</th>';
+  h += '</tr>';
+  for (let ci = 0; ci < conv.cin; ci++) {
+    h += '<tr><td class="ch">' + inNames[ci] + '</td>';
+    const wb = (u * conv.cin + ci) * conv.k;
+    for (let j = 0; j < conv.k; j++) {
+      const w = conv.W[wb + j];
+      h += '<td style="color:' + wColor(w) + '">' + n3(w) + '</td>';
+    }
+    h += '</tr>';
+  }
+  h += '<tr><td class="ch">bias</td><td colspan="' + conv.k + '">' + n3(conv.b[u]) + '</td></tr>';
+  h += '</table></div>';
+  let mean = 0;
+  const map = pf.acts[li];
+  for (let t = 0; t < WIN_T; t++) mean += map[u * WIN_T + t];
+  mean /= WIN_T;
+  h += '<p class="hint">At every position t of the window the filter computes ' +
+    'Σ w·x over this little table centred at t, adds the bias and applies the activation — ' +
+    'the curve in its box is that output. Its time-average is ' +
+    '<span class="res">' + n3(mean) + '</span>' +
+    (li === model.convs.length - 1
+      ? ' — after global average pooling, the single number the vote layer sees from this filter.'
+      : '.') + '</p>';
+  host.innerHTML = h;
 }
 
 function renderInputMath(host, sel) {
@@ -745,16 +895,20 @@ function actExpr(z, a) {
 function renderOutputMath(host, sel) {
   const c = sel.unit;
   const d = model.out;
-  const li = model.denses.length - 1;
-  const inputs = pf.acts[li];
+  const cnn = state.arch === 'cnn';
+  const inputs = cnn ? pf.embedding : pf.acts[model.denses.length - 1];
+  const nameOf = cnn
+    ? (i) => 'avg c' + model.convs.length + '·' + (i + 1)
+    : (i) => 'h' + model.denses.length + '·' + (i + 1);
   const z = pf.logits;
   $('mathTitle').textContent = 'Output · ' + CLASSES[c].name;
 
-  let h = '<h4>Logit — weighted sum over the last hidden layer</h4>';
+  let h = '<h4>Logit — weighted sum over ' +
+    (cnn ? 'the time-averaged filters' : 'the last hidden layer') + '</h4>';
   h += '<div class="scrollx"><table class="mtab"><tr><th>input</th><th>a</th><th>w</th><th>w · a</th></tr>';
   for (let i = 0; i < d.nin; i++) {
     const w = d.W[c * d.nin + i];
-    h += '<tr><td class="ch">h' + (li + 1) + '·' + (i + 1) + '</td><td>' + n3(inputs[i]) + '</td>' +
+    h += '<tr><td class="ch">' + nameOf(i) + '</td><td>' + n3(inputs[i]) + '</td>' +
       '<td style="color:' + wColor(w) + '">' + n3(w) + '</td><td>' + n3(w * inputs[i]) + '</td></tr>';
   }
   h += '<tr><td class="ch">bias</td><td></td><td></td><td>' + n3(d.b[c]) + '</td></tr>';
@@ -812,11 +966,17 @@ function bindUI() {
   $('act').onchange = (e) => { state.activation = e.target.value; rebuildModel(); };
 
   $('layPlus').onclick = () => {
-    if (state.hidden.length < 4) { state.hidden.push(4); rebuildModel(); }
+    if (state.arch === 'cnn') {
+      if (state.cnnLayers.length < 3) { state.cnnLayers.push({ filters: 4, kernel: 5 }); rebuildModel(); }
+    } else if (state.hidden.length < 4) { state.hidden.push(4); rebuildModel(); }
   };
   $('layMinus').onclick = () => {
-    if (state.hidden.length > 1) { state.hidden.pop(); rebuildModel(); }
+    if (state.arch === 'cnn') {
+      if (state.cnnLayers.length > 1) { state.cnnLayers.pop(); rebuildModel(); }
+    } else if (state.hidden.length > 1) { state.hidden.pop(); rebuildModel(); }
   };
+  $('archMlp').onclick = () => { if (state.arch !== 'mlp') setArch('mlp'); };
+  $('archCnn').onclick = () => { if (state.arch !== 'cnn') setArch('cnn'); };
 
   // data panel
   $('voteSource').onchange = (e) => {
@@ -930,6 +1090,9 @@ function bindUI() {
 
 /* -------------------------------------------------------------- init */
 function init() {
+  document.body.classList.add('arch-' + state.arch);
+  $('archMlp').classList.toggle('on', state.arch === 'mlp');
+  $('archCnn').classList.toggle('on', state.arch === 'cnn');
   $('voteSource').value = state.voteSource;
   $('studyDoy').value = state.studyDoy;
   $('studyHour').value = state.studyHour;
