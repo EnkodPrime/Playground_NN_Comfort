@@ -98,8 +98,10 @@ Two architectures share the data, the map and the control loop, switchable at th
   layers of 1–10 units; the default 2×6 network has 129 parameters.
 * **1D CNN · last hour** — the convolutional architecture of the sibling signal playground,
   given several input channels: every vote carries the last ~64 minutes of every sensor as a
-  multi-channel window, and 1–3 layers of sliding kernels read rises, falls and recent activity
-  before a global average pool feeds the vote.
+  multi-channel window, and 1–3 layers of sliding kernels read rises, falls and recent activity.
+  The output head is selectable, as in the sibling project: Global Average Pool (each filter's
+  verdict over the whole hour), Global Max Pool (its loudest moment) or Flatten (the vote sees
+  every position — the only head that knows *when* something happened).
 
 The distinction is not cosmetic, because comfort has **memory**: the generating model gives the
 body a ~20-minute metabolic inertia (what counts is the activity of the last quarter hour, not

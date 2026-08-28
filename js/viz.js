@@ -215,15 +215,27 @@ function drawNetwork(ctx, o) {
     const d = model.out;
     const di = model.convs.length;
     const from = cols[di], to = cols[di + 1];
-    const mx = denseMaxAbs(d);
+    const F = from.nodes.length;
+    const perT = d.nin / F;               // 1 for a pooled head, T for Flatten
+    const agg = [];                       // per (class, filter): dominant weight & Σ|w|
+    let mxo = 1e-6;
     for (let j = 0; j < to.nodes.length; j++) {
-      for (let i = 0; i < from.nodes.length; i++) {
-        const w = d.W[j * d.nin + i];
-        const a = Math.abs(w) / mx;
-        if (a < 0.02) continue;
-        const hot = emph && ((emphMatches(emph, di, i, cols)) || (emphMatches(emph, di + 1, j, cols)));
-        drawLink(ctx, from.nodes[i], to.nodes[j], a, w, hot, !!emph);
+      for (let f = 0; f < F; f++) {
+        let sum = 0, big = 0;
+        for (let t = 0; t < perT; t++) {
+          const w = d.W[j * d.nin + f * perT + t];
+          sum += Math.abs(w);
+          if (Math.abs(w) > Math.abs(big)) big = w;
+        }
+        agg.push({ j, f, sum, big });
+        mxo = Math.max(mxo, sum);
       }
+    }
+    for (const e of agg) {
+      const a = e.sum / mxo;
+      if (a < 0.02) continue;
+      const hot = emph && ((emphMatches(emph, di, e.f, cols)) || (emphMatches(emph, di + 1, e.j, cols)));
+      drawLink(ctx, from.nodes[e.f], to.nodes[e.j], a, e.big, hot, !!emph);
     }
   }
 

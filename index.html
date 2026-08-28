@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NN Comfort Playground — learning a home's comfort zone</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%232f3f4f%22/><text x=%2250%22 y=%2274%22 font-size=%2264%22 text-anchor=%22middle%22 fill=%22%23ffca7a%22>⌂</text></svg>">
-<link rel="stylesheet" href="css/style.css?v=13">
+<link rel="stylesheet" href="css/style.css?v=14">
 </head>
 <body>
 
@@ -13,7 +13,7 @@
   <div class="brand">
     <span class="logo">⌂</span>
     <div>
-      <h1>NN Comfort Playground <span class="ver">v13 · 2026-08-27</span></h1>
+      <h1>NN Comfort Playground <span class="ver">v14 · 2026-08-27</span></h1>
       <p>A network learns the comfort zone from votes, then runs the heating — in the browser, no libraries</p>
     </div>
   </div>
@@ -59,6 +59,15 @@
       <option value="tanh">Tanh</option>
       <option value="leaky">Leaky ReLU</option>
       <option value="sigmoid">Sigmoid</option>
+    </select>
+  </label>
+
+  <label class="ctl cnnonly" title="How the hour of filter curves becomes the numbers the vote sees. Average: each filter's verdict over the whole window. Max: only its loudest moment — good for short events, blind to when. Flatten: the entire curve position by position — the only head that knows WHEN something happened, and the one with the most weights to overfit.">
+    <span>Output head</span>
+    <select id="head">
+      <option value="gap" selected>Global Avg Pool</option>
+      <option value="gmp">Global Max Pool</option>
+      <option value="flat">Flatten</option>
     </select>
   </label>
 
@@ -359,13 +368,13 @@
   </ul>
 </footer>
 
-<script src="js/comfort.js?v=13"></script>
-<script src="js/sim.js?v=13"></script>
-<script src="js/data.js?v=13"></script>
-<script src="js/nn.js?v=13"></script>
-<script src="js/viz.js?v=13"></script>
-<script src="js/map.js?v=13"></script>
-<script src="js/loop.js?v=13"></script>
-<script src="js/main.js?v=13"></script>
+<script src="js/comfort.js?v=14"></script>
+<script src="js/sim.js?v=14"></script>
+<script src="js/data.js?v=14"></script>
+<script src="js/nn.js?v=14"></script>
+<script src="js/viz.js?v=14"></script>
+<script src="js/map.js?v=14"></script>
+<script src="js/loop.js?v=14"></script>
+<script src="js/main.js?v=14"></script>
 </body>
 </html>

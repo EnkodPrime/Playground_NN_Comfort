@@ -306,9 +306,33 @@ class GlobalAvgPool {
   }
 }
 
+class GlobalMaxPool {
+  constructor() { this.type = 'gmp'; }
+  forward(x, L) {
+    const C = x.length / L;
+    this.C = C; this.L = L;
+    const out = new Float32Array(C);
+    const arg = new Int32Array(C);
+    for (let c = 0; c < C; c++) {
+      let best = -Infinity, bi = 0;
+      for (let t = 0; t < L; t++) { const v = x[c * L + t]; if (v > best) { best = v; bi = t; } }
+      out[c] = best; arg[c] = bi;
+    }
+    this.arg = arg;
+    return out;
+  }
+  backward(dout) {
+    const dx = new Float32Array(this.C * this.L);
+    for (let c = 0; c < this.C; c++) dx[c * this.L + this.arg[c]] += dout[c];
+    return dx;
+  }
+}
+
 class ConvNet1D {
   /** @param {{channels:number, T:number, layers:{filters:number,kernel:number}[],
-   *          activation:string, nClasses:number}} cfg */
+   *          activation:string, head:string, nClasses:number}} cfg
+   *  head: 'gap' — each filter's time-average; 'gmp' — its loudest moment;
+   *  'flat' — the vote sees every filter at every position (knows WHEN). */
   constructor(cfg) {
     this.kind = 'cnn';
     this.cfg = JSON.parse(JSON.stringify(cfg));
@@ -325,8 +349,11 @@ class ConvNet1D {
       this.actsL.push(new Activation(cfg.activation));
       cin = ls.filters;
     });
-    this.gap = new GlobalAvgPool();
-    this.out = new Dense(cin, cfg.nClasses);
+    this.headKind = cfg.head || 'gap';
+    if (this.headKind === 'gmp') this.pool = new GlobalMaxPool();
+    else if (this.headKind === 'flat') this.pool = null;
+    else this.pool = new GlobalAvgPool();
+    this.out = new Dense(this.pool ? cin : cin * cfg.T, cfg.nClasses);
     this.params = [...this.convs, this.out];
   }
   /** With keepActs=true, this.acts[l] holds layer l's activation maps. */
@@ -338,7 +365,7 @@ class ConvNet1D {
       a = this.actsL[l].forward(this.convs[l].forward(a, T));
       if (keepActs) this.acts.push(a);
     }
-    this.embedding = this.gap.forward(a, T);
+    this.embedding = this.pool ? this.pool.forward(a, T) : a;
     this.logits = this.out.forward(this.embedding);
     return this.softmax(this.logits);
   }
@@ -347,7 +374,7 @@ class ConvNet1D {
     for (let i = 0; i < probs.length; i++) d[i] = probs[i];
     d[target] -= 1;
     let g = this.out.backward(d);
-    g = this.gap.backward(g);
+    if (this.pool) g = this.pool.backward(g);
     for (let l = this.convs.length - 1; l >= 0; l--) {
       g = this.actsL[l].backward(g);
       g = this.convs[l].backward(g);

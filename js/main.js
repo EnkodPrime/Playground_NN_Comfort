@@ -6,6 +6,7 @@ const state = {
   arch: 'mlp',         // 'mlp' — snapshot; 'cnn' — 1D convolution over the last hour
   hidden: [6, 6],
   cnnLayers: [{ filters: 4, kernel: 5 }, { filters: 4, kernel: 5 }],
+  head: 'gap',       // CNN output head: gap | gmp | flat
   activation: 'relu',
   lr: 0.003,
   l2: 0,
@@ -126,6 +127,7 @@ function rebuildModel() {
       T: WIN_T,
       layers: JSON.parse(JSON.stringify(state.cnnLayers)),
       activation: state.activation,
+      head: state.head,
       nClasses: CLASSES.length,
     });
   } else {
@@ -810,7 +812,9 @@ function renderFilterMath(host, sel) {
     'the curve in its box is that output. Its time-average is ' +
     '<span class="res">' + n3(mean) + '</span>' +
     (li === model.convs.length - 1
-      ? ' — after global average pooling, the single number the vote layer sees from this filter.'
+      ? (model.headKind === 'gap' ? ' — after global average pooling, the single number the vote layer sees from this filter.'
+        : model.headKind === 'gmp' ? '; with the Global Max Pool head the vote instead sees the curve\'s PEAK.'
+        : '; with the Flatten head the vote sees this whole curve, position by position.')
       : '.') + '</p>';
   host.innerHTML = h;
 }
@@ -897,14 +901,20 @@ function renderOutputMath(host, sel) {
   const d = model.out;
   const cnn = state.arch === 'cnn';
   const inputs = cnn ? pf.embedding : pf.acts[model.denses.length - 1];
-  const nameOf = cnn
-    ? (i) => 'avg c' + model.convs.length + '·' + (i + 1)
-    : (i) => 'h' + model.denses.length + '·' + (i + 1);
+  const L = cnn ? model.convs.length : 0;
+  const nameOf = !cnn
+    ? (i) => 'h' + model.denses.length + '·' + (i + 1)
+    : model.headKind === 'flat'
+      ? (i) => 'c' + L + '·' + (Math.floor(i / WIN_T) + 1) + ' t' + (i % WIN_T)
+      : (i) => (model.headKind === 'gmp' ? 'max c' : 'avg c') + L + '·' + (i + 1);
   const z = pf.logits;
   $('mathTitle').textContent = 'Output · ' + CLASSES[c].name;
 
   let h = '<h4>Logit — weighted sum over ' +
-    (cnn ? 'the time-averaged filters' : 'the last hidden layer') + '</h4>';
+    (!cnn ? 'the last hidden layer'
+      : model.headKind === 'flat' ? 'every filter at every position (Flatten)'
+      : model.headKind === 'gmp' ? 'each filter\'s loudest moment (Global Max Pool)'
+      : 'the time-averaged filters (Global Avg Pool)') + '</h4>';
   h += '<div class="scrollx"><table class="mtab"><tr><th>input</th><th>a</th><th>w</th><th>w · a</th></tr>';
   for (let i = 0; i < d.nin; i++) {
     const w = d.W[c * d.nin + i];
@@ -964,6 +974,7 @@ function bindUI() {
   $('l2').onchange = (e) => { state.l2 = +e.target.value; };
   $('batch').onchange = (e) => { state.batch = +e.target.value; };
   $('act').onchange = (e) => { state.activation = e.target.value; rebuildModel(); };
+  $('head').onchange = (e) => { state.head = e.target.value; rebuildModel(); };
 
   $('layPlus').onclick = () => {
     if (state.arch === 'cnn') {
